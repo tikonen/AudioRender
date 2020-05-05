@@ -1,0 +1,11 @@
+Win32
+build
+*.log
+.DS_Store
+Temp
+Library
+AssetStore
+AssetStore.meta
+.vs
+*.sln
+*.csproj
