@@ -1,8 +1,5 @@
 #include <Windows.h>
 
-#include <condition_variable>
-#include <mutex>
-#include <memory>
 #include <atomic>
 
 #include <Log.hpp>
@@ -22,13 +19,11 @@ std::atomic_bool g_running = true;
 #define VERSION "0.1"
 #define APP_NAME "AudioRenderAPITest"
 
-
 void mainLoop(int demoMode, AudioRender::IDrawDevice* device);
 
 int main(int argc, char* argv[])
 {
     LOG("%s %s %s", APP_NAME, VERSION, __DATE__);
-
     bool audio = false;
     bool simulation = false;
     bool testTone = false;
@@ -234,8 +229,9 @@ void DisplayUsage()
         "\n"
         "Version: " VERSION
         "\n\n"
-        "Usage:\n"
-        "AudioRenderAPITest [options]\n"
+        "Usage:\n"  //
+        APP_NAME
+        " [options]\n"
         "\nOptions:\n"
         "/S\tVisual simulation.\n"
         "/A\tAudio render.\n"
