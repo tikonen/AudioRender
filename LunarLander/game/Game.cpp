@@ -83,27 +83,27 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
     while (running) {
         device->Begin();
-        device->SetIntensity(0.5f);
+        device->SetIntensity(0.2f);
 
         controller.update();
 
-        if (controller.zoomIn.status()) {
-            viewport.zoom = std::min(viewport.zoom + 0.1f, 16.f);
+        if (controller.zoomIn.pressed()) {
+            viewport.zoom = std::min(viewport.zoom + 1.f, 7.f);
         }
-        if (controller.zoomOut.status()) {
-            viewport.zoom = std::max(viewport.zoom - 0.1f, 1.f);
+        if (controller.zoomOut.pressed()) {
+            viewport.zoom = std::max(viewport.zoom - 1.f, 1.f);
         }
         if (controller.left.status()) {
-            viewport.pos.x -= 1;
+            viewport.pos.x = std::max(viewport.pos.x - 1, 0);
         }
         if (controller.right.status()) {
-            viewport.pos.x += 1;
-        }
-        if (controller.up.status()) {
-            viewport.pos.y += 1;
+            viewport.pos.x = std::min(viewport.pos.x + 1, viewport.width);
         }
         if (controller.down.status()) {
-            viewport.pos.y -= 1;
+            viewport.pos.y = std::min(viewport.pos.y + 1, viewport.height);
+        }
+        if (controller.up.status()) {
+            viewport.pos.y = std::max(viewport.pos.y - 1, 0);
         }
 
         int windowWidth = std::lroundf(viewport.width / viewport.zoom);
@@ -112,19 +112,20 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         int terrainxs = (int)terrain.size() / 2 - (viewport.terrainPos.x - viewport.pos.x) - windowWidth / 2;
 
         // Step terrain drawing on discrete intervals
-        const int scale = 32;
+        const int scale = 24;
         const int step = std::max(windowWidth / scale, 1);
         int rounded = (terrainxs / step) * step;
         float delta = (terrainxs - rounded) / (float)windowWidth;  // offset for smooth transition
         terrainxs = rounded;
-        if (terrainxs < 0) {
-            delta += terrainxs / (float)windowWidth;
-            terrainxs = 0;
-        }
-
         // sanity limits
         int terrainxe = terrainxs + windowWidth;
         if (terrainxe >= terrain.size()) terrainxe = (int)terrain.size();
+
+        if (terrainxs < 0) {
+            delta += terrainxs / (float)windowWidth;
+            terrainxs = 0;
+            terrainxe = terrainxs + windowWidth * (1 + delta);
+        }
 
         int terrainyOffset = viewport.height / 2 - (viewport.terrainPos.y - viewport.pos.y) - windowHeight / 2;
 
@@ -134,6 +135,25 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             const int y = terrain[terrainxs] - terrainyOffset;
             device->DrawLine({i / (float)windowWidth - 0.5f - delta, y / (float)windowHeight - 0.5f});
         }
+
+        // draw lander
+        float landerScale = viewport.zoom * 0.03f;
+        float height = 1.f;
+        float width = 0.8f;
+        device->SetIntensity(0.4f);
+        device->SetPoint({0, -height / 2 * landerScale});
+        device->DrawLine({-width / 2 * landerScale, 0});
+        device->DrawLine({width / 2 * landerScale, 0});
+        device->DrawLine({0, -height / 2 * landerScale});
+
+        if (controller.up.status()) {
+            device->SetIntensity(0.6f);
+            device->SetPoint({0, height / 2 * landerScale});
+            device->DrawLine({-width / 4 * landerScale, 0});
+            device->SetPoint({0, height / 2 * landerScale});
+            device->DrawLine({width / 4 * landerScale, 0});
+        }
+
         device->WaitSync();
         device->Submit();
     }
