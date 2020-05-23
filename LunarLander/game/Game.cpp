@@ -109,50 +109,33 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         int windowWidth = std::lroundf(viewport.width / viewport.zoom);
         int windowHeight = std::lroundf(viewport.height / viewport.zoom);
 
-        int terrainxs = terrain.size() / 2 - (viewport.terrainPos.x - viewport.pos.x) - windowWidth / 2;
-        if (terrainxs < 0) terrainxs = 0;
+        int terrainxs = (int)terrain.size() / 2 - (viewport.terrainPos.x - viewport.pos.x) - windowWidth / 2;
 
+        // Step terrain drawing on discrete intervals
         const int scale = 32;
-        const int step = windowWidth / scale;
+        const int step = std::max(windowWidth / scale, 1);
         int rounded = (terrainxs / step) * step;
-        float delta = (terrainxs - rounded) / (float)windowWidth;
+        float delta = (terrainxs - rounded) / (float)windowWidth;  // offset for smooth transition
         terrainxs = rounded;
+        if (terrainxs < 0) {
+            delta += terrainxs / (float)windowWidth;
+            terrainxs = 0;
+        }
 
+        // sanity limits
         int terrainxe = terrainxs + windowWidth;
-        if (terrainxe >= terrain.size()) terrainxe = terrain.size();
+        if (terrainxe >= terrain.size()) terrainxe = (int)terrain.size();
 
-        int terrainxy = std::lroundf((viewport.terrainPos.y - viewport.pos.y) / viewport.zoom);
+        int terrainyOffset = viewport.height / 2 - (viewport.terrainPos.y - viewport.pos.y) - windowHeight / 2;
 
-        device->SetPoint({-0.5f - delta, (terrain[terrainxs] + terrainxy) / (float)viewport.height - 0.5f});
+        device->SetPoint({-0.5f - delta, (terrain[terrainxs] - terrainyOffset) / (float)windowHeight - 0.5f});
         terrainxs += step;
         for (size_t i = 1; i < windowWidth && terrainxs < terrainxe; i += step, terrainxs += step) {
-            const int y = terrain[terrainxs] + terrainxy;
-            device->DrawLine({i / (float)windowWidth - 0.5f - delta, y / (float)viewport.height - 0.5f});
+            const int y = terrain[terrainxs] - terrainyOffset;
+            device->DrawLine({i / (float)windowWidth - 0.5f - delta, y / (float)windowHeight - 0.5f});
         }
         device->WaitSync();
         device->Submit();
     }
-    /*
-    while (running) {
-        device->Begin();
-        device->SetIntensity(0.5f);
-        device->SetPoint({0.0, 0.0});
-        device->DrawCircle(0.5);
-
-        const float rad = i++ / 360.f * pi;
-        const float sinr = sin(rad);
-        const float cosr = cos(rad);
-        auto point = [=](float x, float y) { return AudioRender::Point{cosr * x - sinr * y, sinr * x + cosr * y}; };
-        device->SetIntensity(0.3f);
-        device->SetPoint(point(.0, .5f));
-        device->DrawLine(point(.5f, .0));
-        device->DrawLine(point(.0, -.5f));
-        device->DrawLine(point(-.5f, .0f));
-        device->DrawLine(point(.0, .5f));
-
-        device->WaitSync();
-        device->Submit();
-    }
-    */
 }
 }  // namespace LunarLander
