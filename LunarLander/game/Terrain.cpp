@@ -35,7 +35,7 @@ float interpolate(float pa, float pb, float t)
 float interpolate(float pa, float pb, float t) { return pa * (1 - t) + pb * t; }
 #endif
 
-std::vector<int> perlin(const int wl, int const amplitude, int w, int h)
+std::vector<int> perlin(const int wl, int const amplitude, int w)
 {
     std::vector<int> arr(w);
 
@@ -47,9 +47,9 @@ std::vector<int> perlin(const int wl, int const amplitude, int w, int h)
         if (x % wl == 0) {
             a = b;
             b = random();
-            y = std::lroundf(h / 2 + a * amplitude);
+            y = std::lroundf(a * amplitude);
         } else {
-            y = std::lroundf(h / 2 + interpolate(a, b, (x % wl) / (float)wl) * amplitude);
+            y = std::lroundf(interpolate(a, b, (x % wl) / (float)wl) * amplitude);
         }
         arr[x] = y;
     }
@@ -57,14 +57,14 @@ std::vector<int> perlin(const int wl, int const amplitude, int w, int h)
     return arr;
 }
 
-std::vector<int> perlinOctaves(unsigned int seed, int amplitude, int wl, int octaves, int w, int h)
+std::vector<int> perlinOctaves(unsigned int seed, int amplitude, int wl, int octaves, int w)
 {
     std::vector<int> arr(w);
     memset(&arr[0], 0, arr.size());
     const int div = 2;
     randomSeed(seed);
     for (int i = 0; i < octaves; i++) {
-        auto r = perlin(wl, amplitude, w, h);
+        auto r = perlin(wl, amplitude, w);
         for (size_t j = 0; j < r.size(); j++) arr[j] += r[j];
         amplitude /= div;
         wl /= div;
@@ -77,10 +77,9 @@ std::vector<int> generateTerrain(int level, int width)
     int seed = level + 1;
     int amplitude = 128;
     int waveLength = 64;
-    int octaves = 6;
-    int height = 0;
+    int octaves = 5;
 
-    auto terrain = perlinOctaves(seed, amplitude, waveLength, octaves, width, height);
+    auto terrain = perlinOctaves(seed, amplitude, waveLength, octaves, width);
     return terrain;
 }
 

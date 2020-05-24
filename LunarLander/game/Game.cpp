@@ -4,28 +4,31 @@
 #include <algorithm>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 #include "Game.hpp"
 #include "Terrain.hpp"
+
+#define G 1.625f  // ms^2
+
+#define OUT_OF_BOUNDS 0
 
 namespace LunarLander
 {
 void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 {
-    // Basic rendering loop
     float i = 0;
-    const float pi = 3.414f;
 
     auto terrain = generateTerrain(0, 400);
 
-    struct Point {
-        int x, y;
-    };
+    using Vector2D = glm::ivec2;
+    using Vector2Df = glm::vec2;
 
     struct ViewPort {
         int width;
         int height;
-        Point pos;
-        Point terrainPos;
+        Vector2D pos;
+        Vector2D terrainPos;
         float zoom;
     } viewport;
     viewport.height = 200;
@@ -81,6 +84,20 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
     } controller;
 
+    struct Lander {
+        Vector2Df A = {0, G / 3.f};
+        Vector2Df velocity{0};
+        Vector2D pos{0};
+        float angle = 0;  // in radians
+        const float height = 1.f;
+        const float width = 0.5f;
+        void update(float t)
+        {
+            // TODO position
+        }
+
+    } lander;
+
     while (running) {
         device->Begin();
         device->SetIntensity(0.2f);
@@ -106,10 +123,21 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             viewport.pos.y = std::max(viewport.pos.y - 1, 0);
         }
 
-        int windowWidth = std::lroundf(viewport.width / viewport.zoom);
-        int windowHeight = std::lroundf(viewport.height / viewport.zoom);
+        const int windowWidth = std::lroundf(viewport.width / viewport.zoom);
+        const int windowHeight = std::lroundf(viewport.height / viewport.zoom);
 
         int terrainxs = (int)terrain.size() / 2 - (viewport.terrainPos.x - viewport.pos.x) - windowWidth / 2;
+
+#if !OUT_OF_BOUNDS
+        if (terrainxs < 0) {
+            viewport.pos.x = windowWidth / 2;
+            terrainxs = 0;
+        }
+        if (terrainxs + windowWidth > terrain.size()) {
+            terrainxs = (int)terrain.size() - windowWidth;
+            viewport.pos.x = viewport.width - windowWidth / 2;
+        }
+#endif
 
         // Step terrain drawing on discrete intervals
         const int scale = 24;
@@ -117,18 +145,26 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         int rounded = (terrainxs / step) * step;
         float delta = (terrainxs - rounded) / (float)windowWidth;  // offset for smooth transition
         terrainxs = rounded;
-        // sanity limits
+
         int terrainxe = terrainxs + windowWidth;
+        // sanity limits
+        if (terrainxe > terrain.size()) {
+            terrainxe = (int)terrain.size();
+        }
+#if OUT_OF_BOUNDS
+        // allow out of bounds
         if (terrainxe >= terrain.size()) terrainxe = (int)terrain.size();
 
         if (terrainxs < 0) {
             delta += terrainxs / (float)windowWidth;
             terrainxs = 0;
-            terrainxe = terrainxs + windowWidth * (1 + delta);
+            terrainxe = terrainxs + (int)(windowWidth * (1 + delta));
         }
+#endif
 
         int terrainyOffset = viewport.height / 2 - (viewport.terrainPos.y - viewport.pos.y) - windowHeight / 2;
 
+        // Draw terrain
         device->SetPoint({-0.5f - delta, (terrain[terrainxs] - terrainyOffset) / (float)windowHeight - 0.5f});
         terrainxs += step;
         for (size_t i = 1; i < windowWidth && terrainxs < terrainxe; i += step, terrainxs += step) {
@@ -138,20 +174,20 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         // draw lander
         float landerScale = viewport.zoom * 0.03f;
-        float height = 1.f;
-        float width = 0.8f;
         device->SetIntensity(0.4f);
-        device->SetPoint({0, -height / 2 * landerScale});
-        device->DrawLine({-width / 2 * landerScale, 0});
-        device->DrawLine({width / 2 * landerScale, 0});
-        device->DrawLine({0, -height / 2 * landerScale});
+        device->SetPoint({0, -lander.height / 3 * landerScale});
+        device->DrawLine({-lander.width / 2 * landerScale, 0});
+        device->DrawLine({lander.width / 2 * landerScale, 0});
+        device->DrawLine({0, -lander.height / 3 * landerScale});
 
         if (controller.up.status()) {
+            // flame.
+            // ##TODO randomize flame size
             device->SetIntensity(0.6f);
-            device->SetPoint({0, height / 2 * landerScale});
-            device->DrawLine({-width / 4 * landerScale, 0});
-            device->SetPoint({0, height / 2 * landerScale});
-            device->DrawLine({width / 4 * landerScale, 0});
+            device->SetPoint({0, lander.height / 2 * landerScale});
+            device->DrawLine({-lander.width / 4 * landerScale, 0});
+            device->SetPoint({0, lander.height / 2 * landerScale});
+            device->DrawLine({lander.width / 4 * landerScale, 0});
         }
 
         device->WaitSync();

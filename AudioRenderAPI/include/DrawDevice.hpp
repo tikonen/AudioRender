@@ -12,6 +12,8 @@ struct Rectangle {
 struct Point {
     float x;
     float y;
+
+    Point operator+(const Point&& p) const { return {x + p.x, y + p.y}; }
 };
 
 class IDrawDevice

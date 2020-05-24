@@ -20,6 +20,7 @@ set_target_properties(${_target} PROPERTIES
 target_link_libraries(${_target} AudioRenderAPI)
 
 #target_link_libraries(${_target} rapidjson)
+target_link_libraries(${_target} glm) # Math library
 target_link_libraries(${_target} stb) # Raster image loading
 target_link_libraries(${_target} nanosvg) # Vector image loading
 
