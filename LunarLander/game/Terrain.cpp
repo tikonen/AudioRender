@@ -79,7 +79,7 @@ std::vector<std::pair<int, int>> buildLandingPlaces(std::vector<int>& terrain)
     std::vector<std::pair<int, int>> places;
 
     int size = (int)terrain.size();
-    for (int startidx = size / (numLandingPlaces + 1) - 1; startidx < size - 5; startidx += size / (numLandingPlaces + 1)) {
+    for (int startidx = size / numLandingPlaces - landingWidth / 2; startidx < size - landingWidth / 2; startidx += size / numLandingPlaces) {
         for (int i = startidx - 1 - landingWidth; i >= 5; i--) {
             int b = terrain[i + landingWidth];
             int a = terrain[i];
@@ -96,6 +96,13 @@ std::vector<std::pair<int, int>> buildLandingPlaces(std::vector<int>& terrain)
             }
         }
     }
+    // get rid of overlapping
+    for (size_t i = places.size() - 1; i > 0; i--) {
+        if (places[i - 1].second >= places[i].first) {
+            places.erase(places.begin() + i);
+        }
+    }
+
     return places;
 }
 
