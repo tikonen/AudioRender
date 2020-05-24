@@ -60,10 +60,12 @@ int main(int argc, char* argv[])
         // Use simple window rendering
         std::shared_ptr<RenderView> renderView;
         renderView = std::make_shared<RenderView>(g_running);
+
         const char* background = "scope.jpg";
         if (!renderView->loadBackground(background)) {
             printf("WARNING: Cannot load %s\n.", background);
         }
+
         renderView->start();
         renderView->SimulateFlicker(true);
         renderView->SimulateBeamIdle(true);
