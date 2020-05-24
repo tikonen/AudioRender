@@ -72,15 +72,43 @@ std::vector<int> perlinOctaves(unsigned int seed, int amplitude, int wl, int oct
     return arr;
 }
 
-std::vector<int> generateTerrain(int level, int width)
+std::vector<std::pair<int, int>> buildLandingPlaces(std::vector<int>& terrain)
+{
+    const int numLandingPlaces = 3;
+    const int landingWidth = 10;
+    std::vector<std::pair<int, int>> places;
+
+    int size = (int)terrain.size();
+    for (int startidx = size / (numLandingPlaces + 1) - 1; startidx < size - 5; startidx += size / (numLandingPlaces + 1)) {
+        for (int i = startidx - 1 - landingWidth; i >= 5; i--) {
+            int b = terrain[i + landingWidth];
+            int a = terrain[i];
+            if (std::abs(b - a) <= 1) {
+                // found suitable place
+                for (int j = i; j <= i + landingWidth; j++) {
+                    terrain[j] = a;
+                }
+                terrain[i - 1]--;
+                terrain[i + landingWidth + 1]--;
+
+                places.emplace_back(i, i + landingWidth);
+                break;
+            }
+        }
+    }
+    return places;
+}
+
+Map generateTerrain(int level, int width)
 {
     int seed = level + 1;
     int amplitude = 128;
     int waveLength = 64;
-    int octaves = 5;
+    int octaves = 3;
 
     auto terrain = perlinOctaves(seed, amplitude, waveLength, octaves, width);
-    return terrain;
+    auto places = buildLandingPlaces(terrain);
+    return {terrain, places};
 }
 
 }  // namespace LunarLander

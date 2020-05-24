@@ -18,15 +18,15 @@
 
 #define G 1.625f  // ms^2
 
-#define OUT_OF_BOUNDS 0
-
 namespace LunarLander
 {
 void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 {
     float i = 0;
 
-    auto terrain = generateTerrain(0, 400);
+    auto map = generateTerrain(0, 400);
+    auto terrain = map.terrain;
+    auto landingPlaces = map.landingPlaces;
 
     using Vector2D = glm::ivec2;
     using Vector2Df = glm::vec2;
@@ -160,7 +160,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         int terrainxs = (int)terrain.size() / 2 - (viewport.terrainPos.x - std::lroundf(viewport.pos.x)) - windowWidth / 2;
 
-#if !OUT_OF_BOUNDS
         if (terrainxs < 0) {
             viewport.pos.x = windowWidth / 2.f;
             terrainxs = 0;
@@ -169,10 +168,10 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             terrainxs = (int)terrain.size() - windowWidth;
             viewport.pos.x = viewport.width - windowWidth / 2.f;
         }
-#endif
+        // TODO y coordinate checks
 
         // Step terrain drawing on discrete intervals
-        const int scale = 24;
+        const int scale = 32;
         const int step = std::max(windowWidth / scale, 1);
         int rounded = (terrainxs / step) * step;
         float delta = (terrainxs - rounded) / (float)windowWidth;  // offset for smooth transition
@@ -184,24 +183,27 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         if (terrainxe > terrain.size()) {
             terrainxe = (int)terrain.size();
         }
-#if OUT_OF_BOUNDS
-        // allow out of bounds
-        if (terrainxe >= terrain.size()) terrainxe = (int)terrain.size();
 
-        if (terrainxs < 0) {
-            delta += terrainxs / (float)windowWidth;
-            terrainxs = 0;
-            terrainxe = terrainxs + (int)(windowWidth * (1 + delta));
-        }
-#endif
         float terrainyOffset = viewport.height / 2 - (viewport.terrainPos.y - viewport.pos.y) - windowHeight / 2;
 
         // Draw terrain
-        device->SetPoint({-0.5f - delta, (terrain[terrainxs] - terrainyOffset) / (float)windowHeight - 0.5f});
-        terrainxs += step;
-        for (size_t i = 1; i < windowWidth && terrainxs < terrainxe; i += step, terrainxs += step) {
-            const float y = terrain[terrainxs] - terrainyOffset;
+        int xs = terrainxs;
+        device->SetPoint({-0.5f - delta, (terrain[xs] - terrainyOffset) / (float)windowHeight - 0.5f});
+        xs += step;
+        for (size_t i = 1; i < windowWidth && xs < terrainxe; i += step, xs += step) {
+            const float y = terrain[xs] - terrainyOffset;
             device->DrawLine({i / (float)windowWidth - 0.5f - delta, y / (float)windowHeight - 0.5f});
+        }
+
+        // Mark landing places
+        device->SetIntensity(0.8f);
+        for (auto& p : landingPlaces) {
+            if (p.first > terrainxe) continue;
+            if (p.second < terrainxs) continue;
+
+            const float y = terrain[p.first] - terrainyOffset + 0.1f;
+            device->SetPoint({(p.first - terrainxs) / (float)windowWidth - 0.5f - delta, y / (float)windowHeight - 0.5f});
+            device->DrawLine({(p.second - terrainxs) / (float)windowWidth - 0.5f - delta, y / (float)windowHeight - 0.5f});
         }
 
         // Update lander

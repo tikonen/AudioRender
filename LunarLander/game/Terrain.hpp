@@ -4,6 +4,11 @@
 
 namespace LunarLander
 {
-std::vector<int> generateTerrain(int level, int w);
+struct Map {
+    std::vector<int> terrain;
+    std::vector<std::pair<int, int>> landingPlaces;
+};
+
+Map generateTerrain(int level, int w);
 
 }  // namespace LunarLander
