@@ -94,11 +94,11 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     struct Lander {
         Vector2Df A = {0, G};
         Vector2Df velocity{0};
-        Vector2Df pos{200, 100};
+        Vector2Df pos{200, 50};
         float angularSpeed = 0;
         float angle = 0;  // in radians
-        const float height = 1.f;
-        const float width = 0.5f;
+        const float height = 5.f;
+        const float width = 5.f;
         const float thrust = 3 * G;
 #define DEGTORAD(d) ((float)M_PI / 180.f * (d))
         const float angularAcc = DEGTORAD(20);  // d/s^2
@@ -223,8 +223,8 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
         lander.update(dt, engineon, rotation);
 
-        // draw lander
-        float landerScale = viewport.zoom * 0.03f;
+        // Lander
+        // float landerScale = viewport.zoom * 0.03f;
         device->SetIntensity(0.4f);
 
         // TODO collision
@@ -236,28 +236,39 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         auto rotatedPoint = [&](float x, float y) -> AudioRender::Point {
             auto v = glm::rotate(glm::vec2(x, y), lander.angle);
-            v += offset;
+            // v += offset;
             return {v.x, v.y};
         };
 
+        float landerScale = 1.f / windowWidth;
+
         // TODO rotation point in the middle of mass
-        device->SetPoint(rotatedPoint(0, -lander.height / 3 * landerScale));
-        device->DrawLine(rotatedPoint(-lander.width / 2 * landerScale, 0));
-        device->DrawLine(rotatedPoint(lander.width / 2 * landerScale, 0));
-        device->DrawLine(rotatedPoint(0, -lander.height / 3 * landerScale));
+        std::vector<AudioRender::Point> points;
+        points.push_back(rotatedPoint(0, -lander.height / 2));
+        points.push_back(rotatedPoint(-lander.width / 2, 0));
+        points.push_back(rotatedPoint(lander.width / 2, 0));
+        points.push_back(rotatedPoint(0, -lander.height / 2));
+
+        // draw lander
+        device->SetPoint(points[0] * landerScale);
+        for (size_t i = 1; i < points.size(); i++) device->DrawLine(points[i] * landerScale);
+
+        // DEBUG line
+        // device->SetPoint({(-lander.width) / (float)windowWidth, 0.05f});
+        // device->DrawLine({(+lander.height) / (float)windowWidth, 0.05f});
 
         if (engineon) {
             // draw engine exhaust
             device->SetIntensity(0.4f);
 
             // vary exhaust size
-            float h = lander.height / 2 * landerScale;
+            float h = lander.height / 2;
             h += (elapsed & 0x3) * h / 6.f;
 
-            device->SetPoint(rotatedPoint(0, h));
-            device->DrawLine(rotatedPoint(-lander.width / 4 * landerScale, 0));
-            device->SetPoint(rotatedPoint(0, h));
-            device->DrawLine(rotatedPoint(lander.width / 4 * landerScale, 0));
+            device->SetPoint(rotatedPoint(0, h) * landerScale);
+            device->DrawLine(rotatedPoint(-lander.width / 4, 0) * landerScale);
+            device->SetPoint(rotatedPoint(0, h) * landerScale);
+            device->DrawLine(rotatedPoint(lander.width / 4, 0) * landerScale);
         }
 
         // TODO ground radar should control zoom

@@ -80,7 +80,7 @@ std::vector<std::pair<int, int>> buildLandingPlaces(std::vector<int>& terrain)
 
     int size = (int)terrain.size();
     for (int startidx = size / numLandingPlaces - landingWidth / 2; startidx < size - landingWidth / 2; startidx += size / numLandingPlaces) {
-        for (int i = startidx - 1 - landingWidth; i >= 5; i--) {
+        for (int i = startidx - 1 - landingWidth; i >= landingWidth / 2; i--) {
             int b = terrain[i + landingWidth];
             int a = terrain[i];
             if (std::abs(b - a) <= 1) {
@@ -88,8 +88,10 @@ std::vector<std::pair<int, int>> buildLandingPlaces(std::vector<int>& terrain)
                 for (int j = i; j <= i + landingWidth; j++) {
                     terrain[j] = a;
                 }
-                terrain[i - 1]--;
-                terrain[i + landingWidth + 1]--;
+                terrain[i - 2] += 1;
+                terrain[i - 1] += 2;
+                terrain[i + landingWidth + 1] += 2;
+                terrain[i + landingWidth + 1] += 1;
 
                 places.emplace_back(i, i + landingWidth);
                 break;

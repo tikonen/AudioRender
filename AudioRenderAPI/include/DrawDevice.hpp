@@ -14,6 +14,7 @@ struct Point {
     float y;
 
     Point operator+(const Point&& p) const { return {x + p.x, y + p.y}; }
+    Point operator*(float f) const { return {x * f, y * f}; }
 };
 
 class IDrawDevice
