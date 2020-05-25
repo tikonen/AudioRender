@@ -78,6 +78,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         Key down = Key(VK_DOWN);
         Key zoomIn = Key(0x5A);   // Z
         Key zoomOut = Key(0x58);  // X
+        Key pause = Key(0x50);    // P
 
         void update()
         {
@@ -87,6 +88,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             down.update();
             zoomIn.update();
             zoomOut.update();
+            pause.update();
         }
 
     } controller;
@@ -112,6 +114,8 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             angle += (angularSpeed + adelta / 2.f) * t;
             angularSpeed += adelta;
             if (!rotation) angularSpeed -= angularSpeed * dampening * t;
+            if (angle > (float)M_PI) angle = -(2 * (float)M_PI - angle);
+            if (angle < (float)-M_PI) angle = (2 * (float)M_PI + angle);
 
             // lander position
             const float accScale = 1 / 2.f;
@@ -126,11 +130,23 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
     } lander;
 
+    bool paused = false;
+
     while (running) {
         device->Begin();
         device->SetIntensity(0.2f);
 
+        using namespace std::chrono;
+        static auto ticks = system_clock::now();
+        auto now = system_clock::now();
+        long long elapsed = duration_cast<milliseconds>(now - ticks).count();
+        ticks = now;
+
         controller.update();
+
+        if (controller.pause.pressed()) {
+            paused = !paused;
+        }
 
         if (controller.zoomIn.pressed()) {
             viewport.zoom = std::min(viewport.zoom + 1.f, 7.f);
@@ -168,7 +184,8 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             terrainxs = (int)terrain.size() - windowWidth;
             viewport.pos.x = viewport.width - windowWidth / 2.f;
         }
-        // TODO y coordinate checks
+
+        // TODO y coordinate border checks
 
         // Step terrain drawing on discrete intervals
         const int scale = 32;
@@ -196,7 +213,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
 
         // Mark landing places
-        device->SetIntensity(0.8f);
+        device->SetIntensity(0.6f);
         for (auto& p : landingPlaces) {
             if (p.first > terrainxe) continue;
             if (p.second < terrainxs) continue;
@@ -207,11 +224,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
 
         // Update lander
-        using namespace std::chrono;
-        static auto ticks = system_clock::now();
-        auto now = system_clock::now();
-        long long elapsed = duration_cast<milliseconds>(now - ticks).count();
-        ticks = now;
         float dt = elapsed / 1000.f;
         bool engineon = controller.up.status();
         int rotation = 0;
@@ -224,19 +236,14 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         lander.update(dt, engineon, rotation);
 
         // Lander
-        // float landerScale = viewport.zoom * 0.03f;
         device->SetIntensity(0.4f);
-
-        // TODO collision
 
         // lander position
         Vector2Df offset = lander.pos - viewport.pos;
-        offset.x /= windowWidth;
-        offset.y /= windowHeight;
 
         auto rotatedPoint = [&](float x, float y) -> AudioRender::Point {
             auto v = glm::rotate(glm::vec2(x, y), lander.angle);
-            // v += offset;
+            v += offset;
             return {v.x, v.y};
         };
 
@@ -245,9 +252,49 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         // TODO rotation point in the middle of mass
         std::vector<AudioRender::Point> points;
         points.push_back(rotatedPoint(0, -lander.height / 2));
-        points.push_back(rotatedPoint(-lander.width / 2, 0));
-        points.push_back(rotatedPoint(lander.width / 2, 0));
+        points.push_back(rotatedPoint(-lander.width / 2, lander.height / 5));  // left
+        points.push_back(rotatedPoint(0, 0));                                  // center
+        points.push_back(rotatedPoint(lander.width / 2, lander.height / 5));   // right
         points.push_back(rotatedPoint(0, -lander.height / 2));
+
+        // TODO collision
+
+        bool collided = false;
+        for (auto& p : points) {
+            int x = std::lroundf(p.x + lander.pos.x);
+            if (x < 0) continue;
+            if (x >= terrain.size()) continue;
+            int y = terrain[x];
+            if (y < std::ceilf(p.y + lander.pos.y)) collided = true;
+        }
+        if (collided) {
+            const int maxLandingAngle = 5;            // degrees
+            const float maxHorisontalVelocity = 0.5;  // m/s
+            const float maxVerticalVelocity = 1;      // m/s
+
+            bool landed = false;
+            // check if lander is on level
+            if (std::abs(lander.angle) < DEGTORAD(maxLandingAngle)) {
+                // check if on landing pad
+                int lxs = std::lroundf(points[1].x + lander.pos.x);
+                int lxe = std::lroundf(points[3].x + lander.pos.x);
+                for (auto& lp : landingPlaces) {
+                    if (lp.first <= lxs && lp.second >= lxe) {
+                        // at landing pad
+                        // TODO check x and y velocity!
+                        landed = true;
+                    }
+                }
+            }
+            if (!landed) {
+                // DEBUG
+                device->SetPoint({0, 0});
+                device->DrawCircle(landerScale * 2 * lander.width);
+            } else {
+                device->SetPoint({0, landerScale * 2 * lander.width});
+                device->DrawCircle(landerScale * 2 * lander.width);
+            }
+        }
 
         // draw lander
         device->SetPoint(points[0] * landerScale);
@@ -262,19 +309,20 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             device->SetIntensity(0.4f);
 
             // vary exhaust size
-            float h = lander.height / 2;
+            float h = lander.height;
             h += (elapsed & 0x3) * h / 6.f;
 
             device->SetPoint(rotatedPoint(0, h) * landerScale);
-            device->DrawLine(rotatedPoint(-lander.width / 4, 0) * landerScale);
+            device->DrawLine(rotatedPoint(-lander.width / 4, lander.height / 4) * landerScale);
             device->SetPoint(rotatedPoint(0, h) * landerScale);
-            device->DrawLine(rotatedPoint(lander.width / 4, 0) * landerScale);
+            device->DrawLine(rotatedPoint(lander.width / 4, lander.height / 4) * landerScale);
         }
 
         // TODO ground radar should control zoom
 
+
         device->WaitSync();
         device->Submit();
     }
-}
+}  // namespace LunarLander
 }  // namespace LunarLander
