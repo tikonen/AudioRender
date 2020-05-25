@@ -130,6 +130,9 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
     } lander;
 
+    enum GameState { ST_WAIT, ST_PLAY, ST_LANDED, ST_FAIL } gameState;
+    gameState = ST_WAIT;
+
     bool paused = false;
 
     while (running) {
@@ -286,15 +289,71 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     }
                 }
             }
+            using Letter = std::vector<std::vector<AudioRender::Point>>;
+
+            const Letter l_a = {{{0, 0}, {2.5f, -10}, {5.f, 0}}, {{2.5f / 2, -4}, {5.f - 2.5f / 2, -4}}};
+            const Letter l_f = {{{0, 0}, {0, -10}, {4, -10}}, {{0, -5.f}, {3, -5.f}}};
+            const Letter l_i = {{{0, 0}, {0, -10}}};
+            const Letter l_k = {{{0, 0}, {0, -10}}, {{4, -10}, {0, -5}, {4, 0}}};
+            const Letter l_l = {{{0, -10}, {0, 0}, {3.5f, 0}}};
+            const Letter l_o = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};
+            const Letter l_p = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}}};
+            const Letter l_r = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
+
+            float letterScale = 1.f / 10 * 0.2f;
+            auto drawLetter = [&](const Letter& lf, AudioRender::Point offset) {
+                for (const auto& seg : lf) {
+                    device->SetPoint((seg[0] + offset) * letterScale);
+                    for (size_t i = 1; i < seg.size(); i++) {
+                        device->DrawLine((seg[i] + offset) * letterScale);
+                    }
+                }
+            };
+
             if (!landed) {
-                // DEBUG
-                device->SetPoint({0, 0});
-                device->DrawCircle(landerScale * 2 * lander.width);
+                // Crash
+
+                // F A I L
+                drawLetter(l_f, {-8, -5});
+                drawLetter(l_a, {-3, -5});
+                drawLetter(l_i, {3, -5});
+                drawLetter(l_l, {5, -5});
+
             } else {
-                device->SetPoint({0, landerScale * 2 * lander.width});
-                device->DrawCircle(landerScale * 2 * lander.width);
+                // Landing
+
+                // O K
+                drawLetter(l_o, {-6, -5});
+                drawLetter(l_k, {2, -5});
             }
         }
+        /*
+        {
+            using Letter = std::vector<std::vector<AudioRender::Point>>;
+
+            Letter l_f = {{{0, 0}, {0, -10}, {4, -10}}, {{0, -5.f}, {3, -5.f}}};
+            Letter l_a = {{{0, 0}, {2.5f, -10}, {5.f, 0}}, {{2.5f / 2, -4}, {5.f - 2.5f / 2, -4}}};
+            Letter l_i = {{{0, 0}, {0, -10}}};
+            Letter l_l = {{{0, -10}, {0, 0}, {3.5f, 0}}};
+            Letter l_r = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
+            Letter l_p = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}}};
+            Letter l_o = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};
+            Letter l_k = {{{0, 0}, {0, -10}}, {{4, -10}, {0, -5}, {4, 0}}};
+
+            float letterScale = 1.f / 10 * 0.2f;
+            auto drawLetter = [&](const Letter& lf, AudioRender::Point offset) {
+                for (const auto& seg : lf) {
+                    device->SetPoint((seg[0] + offset) * letterScale);
+                    for (size_t i = 1; i < seg.size(); i++) {
+                        device->DrawLine((seg[i] + offset) * letterScale);
+                    }
+                }
+            };
+
+            drawLetter(l_o, {-6, -5});
+            drawLetter(l_k, {2, -5});
+        }
+        */
 
         // draw lander
         device->SetPoint(points[0] * landerScale);
@@ -318,8 +377,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             device->DrawLine(rotatedPoint(lander.width / 4, lander.height / 4) * landerScale);
         }
 
-        // TODO ground radar should control zoom
-
+        // TODO distance to ground should control zoom
 
         device->WaitSync();
         device->Submit();
