@@ -166,7 +166,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         {
             float f = fuel;
             reset(posx, posy);
-            fuel *= fuelRefund;
+            fuel = f * fuelRefund;
         }
 
         void reset(float posx, float posy)
@@ -200,6 +200,19 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     const Letter l_w = {{{0, -10}, {6.f / 3, 0}, {6.f / 2, -6}, {6.f - 6.f / 3, 0}, {6, -10}}};
     const Letter l_n = {{{0, 0}, {0, -10}, {4, 0}, {4, -10}}};
     const Letter l_d = {{{0, 0}, {0, -10}, {4, -8}, {4, -2}, {0, 0}}};
+
+    const Letter d0 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}, {4, -10}}};
+    const Letter d1 = {{{2, 0}, {2, -10}, {1, -9}}};
+    const Letter d2 = {{{0, -10}, {4, -10}, {4, -5}, {0, -5}, {0, 0}, {4, 0}}};
+    const Letter d3 = {{{0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{1, -5}, {4, -5}}};
+    const Letter d4 = {{{4, 0}, {4, -10}, {0, -4}, {5, -4}}};
+    const Letter d5 = {{{0, 0}, {4, 0}, {4, -5}, {0.5, -5}, {0.5, -10}, {4, -10}}};
+    const Letter d6 = {{{0, -5}, {4, -5}, {4, 0}, {0, 0}, {0, -10}, {4, -10}}};
+    const Letter d7 = {{{4, 0}, {4, -10}, {0, -10}}};
+    const Letter d8 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{0, -5}, {4, -5}}};
+    const Letter d9 = {{{3, 0}, {4, -10}, {0, -10}, {0, -6}, {4, -6}}};
+
+    const Letter digits[10] = {d0, d1, d2, d3, d4, d5, d6, d7, d8, d9};
 
     float letterScale = 1.f / 10 * 0.2f;
     auto drawLetter = [&](const Letter& lf, AudioRender::Point offset) {
@@ -244,6 +257,35 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             paused = !paused;
         }
 
+        /*
+        {
+            static float timer = 0;
+            static int num = 0;
+            device->Begin();
+            device->SetIntensity(0.2f);
+
+            float offset = 0;
+            int digit = num;
+            do {
+                drawLetter(digits[digit % 10], {offset, -5});
+                offset -= 5.5f;
+                digit /= 10;
+            } while (digit > 0);
+            drawLetter(l_l, {offset, -5});
+
+            timer += elapsed / 1000.f;
+            if (timer > 1) {
+                num++;
+                timer = 0;
+            }
+
+            device->WaitSync();
+            device->Submit();
+            continue;
+        }
+        */
+
+
         if (paused) {
             // just show last render
             device->WaitSync();
@@ -261,7 +303,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         if (controller.zoomOut.pressed()) {
             viewport.zoom -= 1.f;
         }
-
+        /*
         if (controller.left.status()) {
             // viewport.pos.x = std::max(viewport.pos.x - 1, 0.f);
         }
@@ -271,9 +313,12 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         if (controller.throttle.status()) {
             // viewport.pos.y = std::max(viewport.pos.y - 1, 0);
         }
+        */
 
         if (controller.reset.pressed()) {
             // reset game state
+            level = 0;
+            generateLevel(level);
             viewport.reset();
             lander.reset(viewport.pos.x, 50);
             gameState = ST_WAIT;
@@ -289,13 +334,26 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 timer = 0;
                 blink = 1 - blink;
             }
+            blink = 1;
             if (blink) {
                 // L A N D
+                /*
                 drawLetter(l_l, {-11, -5});
                 drawLetter(l_a, {-6, -5});
                 drawLetter(l_n, {0, -5});
                 drawLetter(l_d, {6, -5});
+                */
+                // Level
+                float offset = 0;
+                int digit = level;
+                do {
+                    drawLetter(digits[digit % 10], {offset, -5});
+                    offset -= 5.5f;
+                    digit /= 10;
+                } while (digit > 0);
+                drawLetter(l_l, {offset, -5});
             }
+
             if (controller.throttle.pressed() || controller.left.pressed() || controller.right.pressed()) {
                 gameState = ST_PLAY;
             }
@@ -313,7 +371,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     generateLevel(level);
                     viewport.reset();
                     // give some extra fuel
-                    lander.nextLevel(viewport.pos.x, 50, 1.5f);
+                    lander.nextLevel(viewport.pos.x, 50, 1.3f);
                     if (level & 1) lander.velocity.x *= -1;
                     gameState = ST_WAIT;
                     coolDownTimer = 0;
@@ -565,16 +623,28 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
             // indicate fuel
             {
+                const float lowFuelAlarmLevel = .15f;
+
                 float p = lander.fuel / lander.initialFuel;
                 if (p > 0) {
-                    glm::vec2 needle(-0.5, 0);
-                    const int steps = 20;
-                    needle = glm::rotate(needle, DEGTORAD(45 * p));
-                    const float angleStep = DEGTORAD(90.f / steps);
-                    device->SetPoint({needle.x, -needle.y});
-                    for (float r = 0; r <= p; r += 1.f / steps) {
-                        needle = glm::rotate(needle, -angleStep);
-                        device->DrawLine({needle.x, -needle.y});
+                    static float timer = 0;
+                    static int blink = 1;
+                    float e = elapsed / 1000.f;
+                    timer += e;
+                    if (timer > .3f) {
+                        timer = 0;
+                        blink = 1 - blink;
+                    }
+                    if (p > lowFuelAlarmLevel || blink) {  // blink if low fuel
+                        glm::vec2 needle(-0.5, 0);
+                        const int steps = 20;
+                        needle = glm::rotate(needle, DEGTORAD(45 * p));
+                        const float angleStep = DEGTORAD(90.f / steps);
+                        device->SetPoint({needle.x, -needle.y});
+                        for (float r = 0; r <= p; r += 1.f / steps) {
+                            needle = glm::rotate(needle, -angleStep);
+                            device->DrawLine({needle.x, -needle.y});
+                        }
                     }
                 }
             }
