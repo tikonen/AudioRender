@@ -25,10 +25,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 {
     float i = 0;
 
-    auto map = generateTerrain(0, 400);
-    auto terrain = map.terrain;
-    auto landingPlaces = map.landingPlaces;
-
     using Vector2D = glm::ivec2;
     using Vector2Df = glm::vec2;
 
@@ -92,13 +88,13 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         Controller()
         {
             printf(
-                "Arrow Left\tRotate left\n"
-                "Arrow Right\tRotate Right\n"
-                "Space Bar\tThrust\n"
-                "P\tPause Game\n"
-                "Arrow Up\tZoom In\n"
-                "Arrow Down\tZoom Out\n"
-                "R\tReset Game\n");
+                "Arrow Left - Rotate left\n"
+                "Arrow Right - Rotate Right\n"
+                "Space Bar - Thrust\n"
+                "P - Pause Game\n"
+                "Arrow Up - Zoom In\n"
+                "Arrow Down - Zoom Out\n"
+                "R - Reset Game\n");
         };
 
         void update()
@@ -113,7 +109,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
 
     } controller;
-
 
     struct Lander {
         const Vector2Df A = {0, G};
@@ -167,6 +162,13 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             velocity += vdelta;
         }
 
+        void nextLevel(float posx, float posy, float fuelRefund)
+        {
+            float f = fuel;
+            reset(posx, posy);
+            fuel *= fuelRefund;
+        }
+
         void reset(float posx, float posy)
         {
             velocity = initialVelocity;
@@ -177,6 +179,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
 
     } lander;
+
     lander.reset(viewport.pos.x, 50);
 
     enum GameState { ST_WAIT, ST_PLAY, ST_WIN, ST_FAIL } gameState;
@@ -208,8 +211,20 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
     };
 
+    LunarLander::Map map;
+    std::vector<int> terrain;
+    std::vector<std::pair<int, int>> landingPlaces;
+
+    auto generateLevel = [&](int level) {
+        map = generateTerrain(level, 400);
+        terrain = map.terrain;
+        landingPlaces = map.landingPlaces;
+    };
+
     // Restrics state change speed
     float coolDownTimer = 0;
+    int level = 0;
+    generateLevel(level);
 
     while (running) {
         using namespace std::chrono;
@@ -276,7 +291,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             }
             if (blink) {
                 // L A N D
-
                 drawLetter(l_l, {-11, -5});
                 drawLetter(l_a, {-6, -5});
                 drawLetter(l_n, {0, -5});
@@ -286,10 +300,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 gameState = ST_PLAY;
             }
         } else if (gameState == ST_WIN) {
-            // O K
-            // drawLetter(l_o, {-6, -5});
-            // drawLetter(l_k, {2, -5});
-
             // W I N
             drawLetter(l_w, {-8, -5});
             drawLetter(l_i, {0, -5});
@@ -298,9 +308,13 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             coolDownTimer += elapsed / 1000.f;
             if (coolDownTimer > 2) {
                 if (controller.throttle.pressed()) {
-                    // reset game state
+                    // next level
+                    level++;
+                    generateLevel(level);
                     viewport.reset();
-                    lander.reset(viewport.pos.x, 50);
+                    // give some extra fuel
+                    lander.nextLevel(viewport.pos.x, 50, 1.5f);
+                    if (level & 1) lander.velocity.x *= -1;
                     gameState = ST_WAIT;
                     coolDownTimer = 0;
                 }
@@ -315,9 +329,19 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             coolDownTimer += elapsed / 1000.f;
             if (coolDownTimer > 2) {
                 if (controller.throttle.pressed()) {
-                    // reset game state
-                    viewport.reset();
-                    lander.reset(viewport.pos.x, 50);
+                    if (lander.fuel > 0) {
+                        level++;
+                        generateLevel(level);
+                        viewport.reset();
+                        // fuel penalty
+                        lander.nextLevel(viewport.pos.x, 50, 0.8f);
+                    } else {
+                        level = 0;
+                        generateLevel(level);
+                        viewport.reset();
+                        lander.reset(viewport.pos.x, 50);
+                    }
+                    if (level & 1) lander.velocity.x *= -1;
                     gameState = ST_WAIT;
                     coolDownTimer = 0;
                 }
@@ -577,6 +601,5 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         device->WaitSync();
         device->Submit();
     }
-}  // namespace LunarLander
-
+}
 }  // namespace LunarLander
