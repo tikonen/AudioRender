@@ -63,8 +63,9 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         void update()
         {
-            keyPressed = !keyDown && (0x8000 & GetKeyState(keyCode));
-            keyDown = (0x8000 & GetKeyState(keyCode));
+            int state = 0x8000 & GetKeyState(keyCode);
+            keyPressed = !keyDown && state;
+            keyDown = state;
         }
 
         bool status() override { return keyDown; }
@@ -74,7 +75,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     struct Controller {
         Key left = Key(VK_LEFT);
         Key right = Key(VK_RIGHT);
-        Key up = Key(VK_UP);
+        Key throttle = Key(VK_UP);
         Key down = Key(VK_DOWN);
         Key zoomIn = Key(0x5A);   // Z
         Key zoomOut = Key(0x58);  // X
@@ -84,7 +85,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         {
             left.update();
             right.update();
-            up.update();
+            throttle.update();
             down.update();
             zoomIn.update();
             zoomOut.update();
@@ -96,7 +97,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     struct Lander {
         Vector2Df A = {0, G};
         Vector2Df velocity{0};
-        Vector2Df pos{200, 50};
+        Vector2Df pos{220, 80};
         float angularSpeed = 0;
         float angle = 0;  // in radians
         const float height = 5.f;
@@ -164,7 +165,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         auto now = system_clock::now();
         long long elapsed = duration_cast<milliseconds>(now - ticks).count();
 
-        if (elapsed < 1000 / 100) {  // Sanity check
+        if (elapsed < 1000 / 100) {  // Sanity limit
             Sleep(1);
             continue;
         }
@@ -174,13 +175,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         if (controller.pause.pressed()) {
             paused = !paused;
-        }
-
-        if (controller.zoomIn.pressed()) {
-            viewport.zoom = std::min(viewport.zoom + 1.f, 7.f);
-        }
-        if (controller.zoomOut.pressed()) {
-            viewport.zoom = std::max(viewport.zoom - 1.f, 1.f);
         }
 
         if (paused) {
@@ -193,6 +187,12 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         device->Begin();
         device->SetIntensity(0.2f);
 
+        if (controller.zoomIn.pressed()) {
+            viewport.zoom = std::min(viewport.zoom + 1.f, 7.f);
+        }
+        if (controller.zoomOut.pressed()) {
+            viewport.zoom = std::max(viewport.zoom - 1.f, 1.f);
+        }
 
         if (controller.left.status()) {
             // viewport.pos.x = std::max(viewport.pos.x - 1, 0.f);
@@ -203,7 +203,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         if (controller.down.status()) {
             // viewport.pos.y = std::min(viewport.pos.y + 1, viewport.height);
         }
-        if (controller.up.status()) {
+        if (controller.throttle.status()) {
             // viewport.pos.y = std::max(viewport.pos.y - 1, 0);
         }
 
@@ -262,7 +262,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         // Update lander
         float dt = elapsed / 1000.f;
-        bool engineon = controller.up.status();
+        bool engineon = controller.throttle.status();
         int rotation = 0;
         if (controller.left.status()) {
             rotation -= 1;
@@ -276,11 +276,9 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         device->SetIntensity(0.4f);
 
         // lander position
-        Vector2Df offset = lander.pos - viewport.pos;
-
         auto rotatedPoint = [&](float x, float y) -> AudioRender::Point {
             auto v = glm::rotate(glm::vec2(x, y), lander.angle);
-            v += offset;
+            // v += offset;
             return {v.x, v.y};
         };
 
@@ -294,22 +292,39 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         points.push_back(rotatedPoint(lander.width / 2, lander.height / 5));   // right
         points.push_back(rotatedPoint(0, -lander.height / 2));
 
-        // TODO y coordinate border checks
+        // y coordinate border checks
         if (lander.pos.y < 0) {
+            // TODO lose game
             lander.pos.y = 0;
         }
         if (lander.pos.y > viewport.height) {
+            // TODO lose game
             lander.pos.y = (float)viewport.height;
         }
 
         bool collided = false;
-        for (auto& p : points) {
-            int x = std::lroundf(p.x + lander.pos.x);
-            if (x < 0) continue;
-            if (x >= terrain.size()) continue;
-            int y = terrain[x];
-            if (y < std::ceilf(p.y + lander.pos.y)) collided = true;
+        for (size_t k = 0; k < points.size(); k++) {
+            float lp1x = points[k].x + lander.pos.x;
+            float lp1y = points[k].y + lander.pos.y;
+            float lp2x = points[(k + 1) % points.size()].x + lander.pos.x;
+            float lp2y = points[(k + 1) % points.size()].y + lander.pos.y;
+
+            int sx = (int)std::min(std::floorf(lp1x), std::floorf(lp2x));
+            for (int i = std::max(0, sx - 4); i < std::min(sx + 4, (int)terrain.size() - 1) && !collided; i++) {
+                float gp1x = (float)i;
+                float gp1y = (float)terrain[i];
+                float gp2x = (float)i + 1;
+                float gp2y = (float)terrain[i + 1];
+
+                auto ccw = [](float ax, float ay, float bx, float by, float cx, float cy) { return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax); };
+
+                auto intersect = [ccw](float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy) {
+                    return ccw(ax, ay, cx, cy, dx, dy) != ccw(bx, by, cx, cy, dx, dy) && ccw(ax, ay, bx, by, cx, cy) != ccw(ax, ay, bx, by, dx, dy);
+                };
+                if (intersect(lp1x, lp1y, lp2x, lp2y, gp1x, gp1y, gp2x, gp2y)) collided = true;
+            }
         }
+
         if (collided) {
             const int maxLandingAngle = 5;            // degrees
             const float maxHorisontalVelocity = 0.5;  // m/s
@@ -319,8 +334,8 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             // check if lander is on level
             if (std::abs(lander.angle) < DEGTORAD(maxLandingAngle)) {
                 // check if on landing pad
-                int lxs = std::lroundf(points[1].x + lander.pos.x);
-                int lxe = std::lroundf(points[3].x + lander.pos.x);
+                int lxs = (int)std::floorf(points[1].x + lander.pos.x);
+                int lxe = (int)std::ceilf(points[3].x + lander.pos.x);
                 for (auto& lp : landingPlaces) {
                     if (lp.first <= lxs && lp.second >= lxe) {
                         // at landing pad
@@ -355,7 +370,13 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
 
         // draw lander
-        device->SetPoint(points[0] * landerScale);
+        const Vector2Df centerOffset = lander.pos - viewport.pos;
+        for (auto& p : points) {
+            p.x += centerOffset.x;
+            p.y += centerOffset.y;
+        }
+
+        device->SetPoint((points[0]) * landerScale);
         for (size_t i = 1; i < points.size(); i++) device->DrawLine(points[i] * landerScale);
 
         // DEBUG line
