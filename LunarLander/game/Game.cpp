@@ -108,6 +108,8 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         Vector2Df pos;
         float angularSpeed;
         float angle;  // in radians
+        float fuel;   // burntime in seconds
+
         const float height = 5.f;
         const float width = 5.f;
 
@@ -118,8 +120,9 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 #define DEGTORAD(d) ((float)M_PI / 180.f * (d))
         const float angularAcc = DEGTORAD(40);  // d/s^2
         const Vector2Df initialVelocity = {3, 0};
+        const float initialFuel = 30.f;
 
-        void update(float t, int engine, int rotation)
+        void update(float t, int& engine, int rotation)
         {
             // lander rotation
             const float dampening = 0.80f;
@@ -134,6 +137,14 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             // lander position
             const float accScale = 1 / 2.f;
 
+            if (engine && fuel > 0) {
+                fuel -= t;
+                if (fuel < 0) {
+                    fuel = 0;
+                }
+            } else {
+                engine = 0;
+            }
             Vector2Df tvec = Vector2Df(0, engine * -thrust);
             Vector2Df totalAcc = A + glm::rotate(tvec, angle);
 
@@ -147,6 +158,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             velocity = initialVelocity;
             angularSpeed = 0;
             angle = 0;
+            fuel = initialFuel;
             pos = {posx, posy};
         }
 
@@ -348,7 +360,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         // Update lander
         float dt = elapsed / 1000.f;
-        bool engineon = controller.throttle.status();
+        int engineon = controller.throttle.status();
         if (gameState == ST_PLAY || gameState == ST_WAIT) {
             int rotation = 0;
             if (controller.left.status()) {
@@ -392,13 +404,13 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         if (gameState == ST_PLAY) {
             // y coordinate border checks
-            if (lander.pos.y < 0) {
-                // TODO lose game
-                lander.pos.y = 0;
+            if (lander.pos.y < -50) {
+                lander.pos.y = -50;
+                gameState = ST_FAIL;
             }
             if (lander.pos.y > viewport.height) {
-                // TODO lose game
                 lander.pos.y = (float)viewport.height;
+                gameState = ST_FAIL;
             }
 
             bool collided = false;
@@ -493,6 +505,22 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 device->DrawLine(exhaust[1] * windowScale);
                 device->SetPoint(exhaust[2] * windowScale);
                 device->DrawLine(exhaust[3] * windowScale);
+            }
+
+            // indicate fuel
+            {
+                float p = lander.fuel / lander.initialFuel;
+                if (p > 0) {
+                    glm::vec2 needle(-0.5, 0);
+                    const int steps = 20;
+                    needle = glm::rotate(needle, DEGTORAD(45 * p));
+                    const float angleStep = DEGTORAD(90.f / steps);
+                    device->SetPoint({needle.x, -needle.y});
+                    for (float r = 0; r <= p; r += 1.f / steps) {
+                        needle = glm::rotate(needle, -angleStep);
+                        device->DrawLine({needle.x, -needle.y});
+                    }
+                }
             }
         }
 
