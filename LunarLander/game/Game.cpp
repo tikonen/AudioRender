@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <vector>
+#include <array>
 #include <chrono>
 
 #define _USE_MATH_DEFINES
@@ -35,14 +36,18 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         int width;
         int height;
         Vector2Df pos;
-        Vector2D terrainPos;
+        const Vector2D terrainPos = {0, 0};
         float zoom;
+
+        void reset()
+        {
+            height = 400;
+            width = 400;
+            pos = {200.f, 150.f};
+            zoom = 3;
+        }
     } viewport;
-    viewport.height = 400;
-    viewport.width = 400;
-    viewport.pos = {200.f, 150.f};
-    viewport.terrainPos = {0, 0};
-    viewport.zoom = 3;
+    viewport.reset();
 
     struct Button {
         virtual ~Button() = default;
@@ -75,36 +80,44 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     struct Controller {
         Key left = Key(VK_LEFT);
         Key right = Key(VK_RIGHT);
-        Key throttle = Key(VK_UP);
-        Key down = Key(VK_DOWN);
-        Key zoomIn = Key(0x5A);   // Z
-        Key zoomOut = Key(0x58);  // X
-        Key pause = Key(0x50);    // P
+        Key throttle = Key(VK_SPACE);
+        // Key down = Key(VK_DOWN);
+        Key zoomIn = Key(VK_UP);
+        Key zoomOut = Key(VK_DOWN);
+        // Key zoomIn = Key(0x5A);   // Z
+        // Key zoomOut = Key(0x58);  // X
+        Key pause = Key(0x50);  // P
+        Key reset = Key(0x52);  // R
 
         void update()
         {
             left.update();
             right.update();
             throttle.update();
-            down.update();
             zoomIn.update();
             zoomOut.update();
             pause.update();
+            reset.update();
         }
 
     } controller;
 
     struct Lander {
-        Vector2Df A = {0, G};
-        Vector2Df velocity{0};
-        Vector2Df pos{0};
-        float angularSpeed = 0;
-        float angle = 0;  // in radians
+        const Vector2Df A = {0, G};
+        Vector2Df velocity;
+        Vector2Df pos;
+        float angularSpeed;
+        float angle;  // in radians
         const float height = 5.f;
         const float width = 5.f;
+
+        Lander() { reset(0, 0); }
+
+        // Parameters
         const float thrust = 3 * G;
 #define DEGTORAD(d) ((float)M_PI / 180.f * (d))
-        const float angularAcc = DEGTORAD(20);  // d/s^2
+        const float angularAcc = DEGTORAD(40);  // d/s^2
+        const Vector2Df initialVelocity = {3, 0};
 
         void update(float t, int engine, int rotation)
         {
@@ -129,10 +142,18 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             velocity += vdelta;
         }
 
-    } lander;
-    lander.pos = {viewport.pos.x, 50};
+        void reset(float posx, float posy)
+        {
+            velocity = initialVelocity;
+            angularSpeed = 0;
+            angle = 0;
+            pos = {posx, posy};
+        }
 
-    enum GameState { ST_WAIT, ST_PLAY, ST_LANDED, ST_FAIL } gameState;
+    } lander;
+    lander.reset(viewport.pos.x, 50);
+
+    enum GameState { ST_WAIT, ST_PLAY, ST_WIN, ST_FAIL } gameState;
     gameState = ST_WAIT;
 
     bool paused = false;
@@ -149,6 +170,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     const Letter l_r = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
     const Letter l_w = {{{0, -10}, {6.f / 3, 0}, {6.f / 2, -6}, {6.f - 6.f / 3, 0}, {6, -10}}};
     const Letter l_n = {{{0, 0}, {0, -10}, {4, 0}, {4, -10}}};
+    const Letter l_d = {{{0, 0}, {0, -10}, {4, -8}, {4, -2}, {0, 0}}};
 
     float letterScale = 1.f / 10 * 0.2f;
     auto drawLetter = [&](const Letter& lf, AudioRender::Point offset) {
@@ -188,6 +210,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         device->Begin();
         device->SetIntensity(0.2f);
 
+
         if (controller.zoomIn.pressed()) {
             viewport.zoom += 1.f;
         }
@@ -201,11 +224,66 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         if (controller.right.status()) {
             // viewport.pos.x = std::min(viewport.pos.x + 1, (float)viewport.width);
         }
-        if (controller.down.status()) {
-            // viewport.pos.y = std::min(viewport.pos.y + 1, viewport.height);
-        }
         if (controller.throttle.status()) {
             // viewport.pos.y = std::max(viewport.pos.y - 1, 0);
+        }
+
+        if (controller.reset.pressed()) {
+            // reset game state
+            viewport.reset();
+            lander.reset(viewport.pos.x, 50);
+            gameState = ST_WAIT;
+        }
+
+        if (gameState == ST_WAIT) {
+            static float timer = 0;
+            static int blink = 1;
+            float e = elapsed / 1000.f;
+            timer += e;
+            if (timer > .5f) {
+                timer = 0;
+                blink = 1 - blink;
+            }
+            if (blink) {
+                // L A N D
+
+                drawLetter(l_l, {-11, -5});
+                drawLetter(l_a, {-6, -5});
+                drawLetter(l_n, {0, -5});
+                drawLetter(l_d, {6, -5});
+            }
+            if (controller.throttle.pressed() || controller.left.pressed() || controller.right.pressed()) {
+                gameState = ST_PLAY;
+            }
+        } else if (gameState == ST_WIN) {
+            // O K
+            // drawLetter(l_o, {-6, -5});
+            // drawLetter(l_k, {2, -5});
+
+            // W I N
+            drawLetter(l_w, {-8, -5});
+            drawLetter(l_i, {0, -5});
+            drawLetter(l_n, {2, -5});
+
+            if (controller.throttle.pressed()) {
+                // reset game state
+                viewport.reset();
+                lander.reset(viewport.pos.x, 50);
+                gameState = ST_WAIT;
+            }
+        } else if (gameState == ST_FAIL) {
+            // F A I L
+            drawLetter(l_f, {-8, -5});
+            drawLetter(l_a, {-3, -5});
+            drawLetter(l_i, {3, -5});
+            drawLetter(l_l, {5, -5});
+
+            if (controller.throttle.pressed()) {
+                // reset game state
+                viewport.reset();
+                lander.reset(viewport.pos.x, 50);
+                gameState = ST_WAIT;
+            }
         }
 
         viewport.zoom = std::max(viewport.zoom, 1.f);
@@ -271,14 +349,19 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         // Update lander
         float dt = elapsed / 1000.f;
         bool engineon = controller.throttle.status();
-        int rotation = 0;
-        if (controller.left.status()) {
-            rotation -= 1;
+        if (gameState == ST_PLAY || gameState == ST_WAIT) {
+            int rotation = 0;
+            if (controller.left.status()) {
+                rotation -= 1;
+            }
+            if (controller.right.status()) {
+                rotation += 1;
+            }
+
+            lander.update(dt, engineon, rotation);
+        } else {
+            engineon = false;
         }
-        if (controller.right.status()) {
-            rotation += 1;
-        }
-        lander.update(dt, engineon, rotation);
 
         // Lander
         device->SetIntensity(0.4f);
@@ -292,86 +375,84 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         // TODO rotation point on the middle of mass?
         std::vector<AudioRender::Point> points;
-        points.push_back(rotatedPoint(0, -lander.height / 2));
-        points.push_back(rotatedPoint(-lander.width / 2, lander.height / 5));  // left
-        points.push_back(rotatedPoint(0, 0));                                  // center
-        points.push_back(rotatedPoint(lander.width / 2, lander.height / 5));   // right
-        points.push_back(rotatedPoint(0, -lander.height / 2));
-
-        // y coordinate border checks
-        if (lander.pos.y < 0) {
-            // TODO lose game
-            lander.pos.y = 0;
-        }
-        if (lander.pos.y > viewport.height) {
-            // TODO lose game
-            lander.pos.y = (float)viewport.height;
+        if (gameState == ST_FAIL) {
+            points.push_back(rotatedPoint(0.5f, -lander.height / 2 - 0.2f));
+            points.push_back(rotatedPoint(-0.5f - lander.width / 2, lander.height / 5 + 0.5f));  // left
+            points.push_back(rotatedPoint(0, 0));                                                // center
+            points.push_back(rotatedPoint(lander.width / 2 + 0.1f, 2.f - lander.height / 5));    // right
+            points.push_back(rotatedPoint(0.4f, -1.f - lander.height / 2));
+        } else {
+            points.push_back(rotatedPoint(0, -lander.height / 2));
+            points.push_back(rotatedPoint(-lander.width / 2, lander.height / 5));  // left
+            points.push_back(rotatedPoint(0, 0));                                  // center
+            points.push_back(rotatedPoint(lander.width / 2, lander.height / 5));   // right
+            points.push_back(rotatedPoint(0, -lander.height / 2));
         }
 
-        bool collided = false;
-        for (size_t k = 0; k < points.size(); k++) {
-            float lp1x = points[k].x + lander.pos.x;
-            float lp1y = points[k].y + lander.pos.y;
-            float lp2x = points[(k + 1) % points.size()].x + lander.pos.x;
-            float lp2y = points[(k + 1) % points.size()].y + lander.pos.y;
 
-            int sx = (int)std::min(std::floorf(lp1x), std::floorf(lp2x));
-            for (int i = std::max(0, sx - 4); i < std::min(sx + 4, (int)terrain.size() - 1) && !collided; i++) {
-                float gp1x = (float)i;
-                float gp1y = (float)terrain[i];
-                float gp2x = (float)i + 1;
-                float gp2y = (float)terrain[i + 1];
-
-                auto ccw = [](float ax, float ay, float bx, float by, float cx, float cy) { return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax); };
-
-                auto intersect = [ccw](float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy) {
-                    return ccw(ax, ay, cx, cy, dx, dy) != ccw(bx, by, cx, cy, dx, dy) && ccw(ax, ay, bx, by, cx, cy) != ccw(ax, ay, bx, by, dx, dy);
-                };
-                if (intersect(lp1x, lp1y, lp2x, lp2y, gp1x, gp1y, gp2x, gp2y)) collided = true;
+        if (gameState == ST_PLAY) {
+            // y coordinate border checks
+            if (lander.pos.y < 0) {
+                // TODO lose game
+                lander.pos.y = 0;
             }
-        }
+            if (lander.pos.y > viewport.height) {
+                // TODO lose game
+                lander.pos.y = (float)viewport.height;
+            }
 
-        if (collided) {
-            const int maxLandingAngle = 5;            // degrees
-            const float maxHorisontalVelocity = 0.5;  // m/s
-            const float maxVerticalVelocity = 1;      // m/s
+            bool collided = false;
+            for (size_t k = 0; k < points.size(); k++) {
+                float lp1x = points[k].x + lander.pos.x;
+                float lp1y = points[k].y + lander.pos.y;
+                float lp2x = points[(k + 1) % points.size()].x + lander.pos.x;
+                float lp2y = points[(k + 1) % points.size()].y + lander.pos.y;
 
-            bool landed = false;
-            // check if lander is on level
-            if (std::abs(lander.angle) < DEGTORAD(maxLandingAngle)) {
-                // check if on landing pad
-                int lxs = (int)std::floorf(points[1].x + lander.pos.x);
-                int lxe = (int)std::ceilf(points[3].x + lander.pos.x);
-                for (auto& lp : landingPlaces) {
-                    if (lp.first <= lxs && lp.second >= lxe) {
-                        // at landing pad
-                        // TODO check x and y velocity!
-                        landed = true;
-                    }
+                int sx = (int)std::min(std::floorf(lp1x), std::floorf(lp2x));
+                for (int i = std::max(0, sx - 4); i < std::min(sx + 4, (int)terrain.size() - 1) && !collided; i++) {
+                    float gp1x = (float)i;
+                    float gp1y = (float)terrain[i];
+                    float gp2x = (float)i + 1;
+                    float gp2y = (float)terrain[i + 1];
+
+                    auto ccw = [](float ax, float ay, float bx, float by, float cx, float cy) { return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax); };
+
+                    auto intersect = [ccw](float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy) {
+                        return ccw(ax, ay, cx, cy, dx, dy) != ccw(bx, by, cx, cy, dx, dy) && ccw(ax, ay, bx, by, cx, cy) != ccw(ax, ay, bx, by, dx, dy);
+                    };
+                    if (intersect(lp1x, lp1y, lp2x, lp2y, gp1x, gp1y, gp2x, gp2y)) collided = true;
                 }
             }
 
+            if (collided) {
+                const int maxLandingAngle = 5;            // degrees
+                const float maxHorisontalVelocity = 0.5;  // m/s
+                const float maxVerticalVelocity = 1;      // m/s
 
-            if (!landed) {
-                // Crash
+                bool landed = false;
+                // check if lander is on level
+                if (std::abs(lander.angle) < DEGTORAD(maxLandingAngle)) {
+                    // check if on landing pad
+                    int lxs = (int)std::floorf(points[1].x + lander.pos.x);
+                    int lxe = (int)std::ceilf(points[3].x + lander.pos.x);
+                    for (auto& lp : landingPlaces) {
+                        if (lp.first <= lxs && lp.second >= lxe) {
+                            // at landing pad
+                            // TODO check x and y velocity!
+                            landed = true;
+                        }
+                    }
+                }
 
-                // F A I L
-                drawLetter(l_f, {-8, -5});
-                drawLetter(l_a, {-3, -5});
-                drawLetter(l_i, {3, -5});
-                drawLetter(l_l, {5, -5});
 
-            } else {
-                // Landing
+                if (!landed) {
+                    // Crash
+                    gameState = ST_FAIL;
 
-                // O K
-                // drawLetter(l_o, {-6, -5});
-                // drawLetter(l_k, {2, -5});
-
-                // W I N
-                drawLetter(l_w, {-8, -5});
-                drawLetter(l_i, {0, -5});
-                drawLetter(l_n, {2, -5});
+                } else {
+                    // Landing
+                    gameState = ST_WIN;
+                }
             }
         }
 
@@ -398,13 +479,24 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 float h = lander.height;
                 h += (elapsed & 0x3) * h / 6.f;
 
-                device->SetPoint(rotatedPoint(0, h) * windowScale);
-                device->DrawLine(rotatedPoint(-lander.width / 4, lander.height / 4) * windowScale);
-                device->SetPoint(rotatedPoint(0, h) * windowScale);
-                device->DrawLine(rotatedPoint(lander.width / 4, lander.height / 4) * windowScale);
+                std::array<AudioRender::Point, 4> exhaust = {            //
+                    rotatedPoint(0, h),                                  //
+                    rotatedPoint(-lander.width / 4, lander.height / 4),  //
+                    rotatedPoint(0, h),                                  //
+                    rotatedPoint(lander.width / 4, lander.height / 4)};
+                for (auto& p : exhaust) {
+                    p.x += centerOffset.x;
+                    p.y += centerOffset.y;
+                }
+
+                device->SetPoint(exhaust[0] * windowScale);
+                device->DrawLine(exhaust[1] * windowScale);
+                device->SetPoint(exhaust[2] * windowScale);
+                device->DrawLine(exhaust[3] * windowScale);
             }
         }
 
+#if 0
         // check distance to ground and update zoom
         {
             int x = (int)std::roundf(lander.pos.x);
@@ -419,6 +511,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 lastSwitch = 0.0f;
             }
         }
+#endif
 
         // Pass scene to rendering
         device->WaitSync();
