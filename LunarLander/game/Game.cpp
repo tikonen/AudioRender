@@ -89,6 +89,18 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         Key pause = Key(0x50);  // P
         Key reset = Key(0x52);  // R
 
+        Controller()
+        {
+            printf(
+                "Arrow Left\tRotate left\n"
+                "Arrow Right\tRotate Right\n"
+                "Space Bar\tThrust\n"
+                "P\tPause Game\n"
+                "Arrow Up\tZoom In\n"
+                "Arrow Down\tZoom Out\n"
+                "R\tReset Game\n");
+        };
+
         void update()
         {
             left.update();
@@ -101,6 +113,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
 
     } controller;
+
 
     struct Lander {
         const Vector2Df A = {0, G};
@@ -120,14 +133,15 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 #define DEGTORAD(d) ((float)M_PI / 180.f * (d))
         const float angularAcc = DEGTORAD(40);  // d/s^2
         const Vector2Df initialVelocity = {3, 0};
-        const float initialFuel = 30.f;
+        const float initialFuel = 60.f;
+        const float mass = 100.f;  // in fuel units
 
         void update(float t, int& engine, int rotation)
         {
             // lander rotation
             const float dampening = 0.80f;
 
-            float adelta = angularAcc * rotation * t;
+            float adelta = angularAcc * rotation * t * mass / (mass + fuel);
             angle += (angularSpeed + adelta / 2.f) * t;
             angularSpeed += adelta;
             if (!rotation) angularSpeed -= angularSpeed * dampening * t;
@@ -145,7 +159,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             } else {
                 engine = 0;
             }
-            Vector2Df tvec = Vector2Df(0, engine * -thrust);
+            Vector2Df tvec = Vector2Df(0, engine * -thrust * mass / (mass + fuel));
             Vector2Df totalAcc = A + glm::rotate(tvec, angle);
 
             Vector2Df vdelta = totalAcc * t * accScale;
@@ -193,6 +207,9 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             }
         }
     };
+
+    // Restrics state change speed
+    float coolDownTimer = 0;
 
     while (running) {
         using namespace std::chrono;
@@ -245,6 +262,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             viewport.reset();
             lander.reset(viewport.pos.x, 50);
             gameState = ST_WAIT;
+            coolDownTimer = 0;
         }
 
         if (gameState == ST_WAIT) {
@@ -277,11 +295,15 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             drawLetter(l_i, {0, -5});
             drawLetter(l_n, {2, -5});
 
-            if (controller.throttle.pressed()) {
-                // reset game state
-                viewport.reset();
-                lander.reset(viewport.pos.x, 50);
-                gameState = ST_WAIT;
+            coolDownTimer += elapsed / 1000.f;
+            if (coolDownTimer > 2) {
+                if (controller.throttle.pressed()) {
+                    // reset game state
+                    viewport.reset();
+                    lander.reset(viewport.pos.x, 50);
+                    gameState = ST_WAIT;
+                    coolDownTimer = 0;
+                }
             }
         } else if (gameState == ST_FAIL) {
             // F A I L
@@ -290,11 +312,15 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             drawLetter(l_i, {3, -5});
             drawLetter(l_l, {5, -5});
 
-            if (controller.throttle.pressed()) {
-                // reset game state
-                viewport.reset();
-                lander.reset(viewport.pos.x, 50);
-                gameState = ST_WAIT;
+            coolDownTimer += elapsed / 1000.f;
+            if (coolDownTimer > 2) {
+                if (controller.throttle.pressed()) {
+                    // reset game state
+                    viewport.reset();
+                    lander.reset(viewport.pos.x, 50);
+                    gameState = ST_WAIT;
+                    coolDownTimer = 0;
+                }
             }
         }
 
@@ -385,15 +411,17 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             return {v.x, v.y};
         };
 
-        // TODO rotation point on the middle of mass?
+        // TODO move rotation point on the middle of mass?
         std::vector<AudioRender::Point> points;
         if (gameState == ST_FAIL) {
+            // Crashed lander
             points.push_back(rotatedPoint(0.5f, -lander.height / 2 - 0.2f));
             points.push_back(rotatedPoint(-0.5f - lander.width / 2, lander.height / 5 + 0.5f));  // left
             points.push_back(rotatedPoint(0, 0));                                                // center
             points.push_back(rotatedPoint(lander.width / 2 + 0.1f, 2.f - lander.height / 5));    // right
             points.push_back(rotatedPoint(0.4f, -1.f - lander.height / 2));
         } else {
+            // Pristine lander
             points.push_back(rotatedPoint(0, -lander.height / 2));
             points.push_back(rotatedPoint(-lander.width / 2, lander.height / 5));  // left
             points.push_back(rotatedPoint(0, 0));                                  // center
@@ -401,8 +429,9 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             points.push_back(rotatedPoint(0, -lander.height / 2));
         }
 
+        if (gameState == ST_PLAY || gameState == ST_WAIT) {
+            // Checke for collisions
 
-        if (gameState == ST_PLAY) {
             // y coordinate border checks
             if (lander.pos.y < -50) {
                 lander.pos.y = -50;
@@ -428,7 +457,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     float gp2y = (float)terrain[i + 1];
 
                     auto ccw = [](float ax, float ay, float bx, float by, float cx, float cy) { return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax); };
-
                     auto intersect = [ccw](float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy) {
                         return ccw(ax, ay, cx, cy, dx, dy) != ccw(bx, by, cx, cy, dx, dy) && ccw(ax, ay, bx, by, cx, cy) != ccw(ax, ay, bx, by, dx, dy);
                     };
@@ -437,9 +465,11 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             }
 
             if (collided) {
-                const int maxLandingAngle = 5;            // degrees
-                const float maxHorisontalVelocity = 0.5;  // m/s
-                const float maxVerticalVelocity = 1;      // m/s
+                // Lander has collided with ground, determine if this was an acceptable landing
+
+                const int maxLandingAngle = 5;             // degrees
+                const float maxHorisontalVelocity = 0.8f;  // m/s
+                const float maxVerticalVelocity = 1.2f;    // m/s
 
                 bool landed = false;
                 // check if lander is on level
@@ -450,19 +480,21 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     for (auto& lp : landingPlaces) {
                         if (lp.first <= lxs && lp.second >= lxe) {
                             // at landing pad
-                            // TODO check x and y velocity!
-                            landed = true;
+                            if (std::fabsf(lander.velocity.x) <= maxHorisontalVelocity && std::fabsf(lander.velocity.y) <= maxVerticalVelocity) {
+                                landed = true;
+                            } else {
+                                // too hard landing
+                            }
                         }
                     }
                 }
-
 
                 if (!landed) {
                     // Crash
                     gameState = ST_FAIL;
 
                 } else {
-                    // Landing
+                    // Successful landing
                     gameState = ST_WIN;
                 }
             }
