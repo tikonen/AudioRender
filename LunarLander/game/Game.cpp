@@ -189,10 +189,10 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         device->SetIntensity(0.2f);
 
         if (controller.zoomIn.pressed()) {
-            viewport.zoom = std::min(viewport.zoom + 1.f, 15.f);
+            viewport.zoom += 1.f;
         }
         if (controller.zoomOut.pressed()) {
-            viewport.zoom = std::max(viewport.zoom - 1.f, 1.f);
+            viewport.zoom -= 1.f;
         }
 
         if (controller.left.status()) {
@@ -208,12 +208,16 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             // viewport.pos.y = std::max(viewport.pos.y - 1, 0);
         }
 
+        viewport.zoom = std::max(viewport.zoom, 1.f);
+        viewport.zoom = std::min(viewport.zoom, 15.f);
+
         viewport.pos.x = lander.pos.x;
         viewport.pos.y = lander.pos.y;
 
         const int windowWidth = std::lroundf(viewport.width / viewport.zoom);
         const float windowScale = 1.f / windowWidth;
 
+        // Get visible terrain borders
         int terrainxs = viewport.terrainPos.x + std::lroundf(viewport.pos.x) - windowWidth / 2;
 
         if (terrainxs < 0) {
@@ -225,40 +229,43 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             viewport.pos.x = viewport.width - windowWidth / 2.f;
         }
 
-        // Step terrain drawing on discrete intervals
-        const int scale = 32;
-        const int step = std::max(windowWidth / scale, 1);
-        int rounded = (terrainxs / step) * step;
-        terrainxs = rounded;
+        // Terrain
+        {
+            // Step terrain drawing on discrete intervals
+            const int scale = 32;
+            const int step = std::max(windowWidth / scale, 1);
+            int rounded = (terrainxs / step) * step;
+            terrainxs = rounded;
 
-        int terrainxe = terrainxs + windowWidth;
-        // sanity limits
-        if (terrainxe > terrain.size()) {
-            terrainxe = (int)terrain.size();
-        }
+            int terrainxe = terrainxs + windowWidth;
+            // sanity limits
+            if (terrainxe > terrain.size()) {
+                terrainxe = (int)terrain.size();
+            }
 
-        float terrainyOffset = viewport.pos.y - viewport.terrainPos.y;
+            float terrainyOffset = viewport.pos.y - viewport.terrainPos.y;
 
-        // Draw terrain
-        int xs = terrainxs;
+            // Draw terrain
+            int xs = terrainxs;
 
-        device->SetPoint({(xs - viewport.pos.x) * windowScale, (terrain[xs] - terrainyOffset) * windowScale});
-        xs += step;
-        for (; xs < terrainxe; xs += step) {
-            const float x = (xs - viewport.pos.x) * windowScale;
-            const float y = (terrain[xs] - terrainyOffset) * windowScale;
-            device->DrawLine({x, y});
-        }
+            device->SetPoint({(xs - viewport.pos.x) * windowScale, (terrain[xs] - terrainyOffset) * windowScale});
+            xs += step;
+            for (; xs < terrainxe; xs += step) {
+                const float x = (xs - viewport.pos.x) * windowScale;
+                const float y = (terrain[xs] - terrainyOffset) * windowScale;
+                device->DrawLine({x, y});
+            }
 
-        // Mark landing places
-        device->SetIntensity(0.6f);
-        for (auto& p : landingPlaces) {
-            if (p.first > terrainxe) continue;
-            if (p.second < terrainxs) continue;
+            // Mark landing places
+            device->SetIntensity(0.6f);
+            for (auto& p : landingPlaces) {
+                if (p.first > terrainxe) continue;
+                if (p.second < terrainxs) continue;
 
-            const float y = (terrain[p.first] - terrainyOffset + 1) * windowScale;
-            device->SetPoint({(p.first - viewport.pos.x) * windowScale, y});
-            device->DrawLine({(p.second - viewport.pos.x) * windowScale, y});
+                const float y = (terrain[p.first] - terrainyOffset + 1) * windowScale;
+                device->SetPoint({(p.first - viewport.pos.x) * windowScale, y});
+                device->DrawLine({(p.second - viewport.pos.x) * windowScale, y});
+            }
         }
 
         // Update lander
@@ -369,35 +376,51 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
 
         // draw lander
-        const Vector2Df centerOffset = lander.pos - viewport.pos;
-        for (auto& p : points) {
-            p.x += centerOffset.x;
-            p.y += centerOffset.y;
+        {
+            const Vector2Df centerOffset = lander.pos - viewport.pos;
+            for (auto& p : points) {
+                p.x += centerOffset.x;
+                p.y += centerOffset.y;
+            }
+
+            device->SetPoint((points[0]) * windowScale);
+            for (size_t i = 1; i < points.size(); i++) device->DrawLine(points[i] * windowScale);
+
+            // DEBUG line
+            // device->SetPoint({(-lander.width) / (float)windowWidth, 0.05f});
+            // device->DrawLine({(+lander.height) / (float)windowWidth, 0.05f});
+
+            if (engineon) {
+                // draw engine exhaust
+                device->SetIntensity(0.4f);
+
+                // vary exhaust size
+                float h = lander.height;
+                h += (elapsed & 0x3) * h / 6.f;
+
+                device->SetPoint(rotatedPoint(0, h) * windowScale);
+                device->DrawLine(rotatedPoint(-lander.width / 4, lander.height / 4) * windowScale);
+                device->SetPoint(rotatedPoint(0, h) * windowScale);
+                device->DrawLine(rotatedPoint(lander.width / 4, lander.height / 4) * windowScale);
+            }
         }
 
-        device->SetPoint((points[0]) * windowScale);
-        for (size_t i = 1; i < points.size(); i++) device->DrawLine(points[i] * windowScale);
+        // check distance to ground and update zoom
+        {
+            int x = (int)std::roundf(lander.pos.x);
+            if (x < 0) x = 0;
+            if (x > terrain.size()) x = (int)terrain.size() - 1;
+            float dis = std::fabsf(lander.pos.y - terrain[x]);
 
-        // DEBUG line
-        // device->SetPoint({(-lander.width) / (float)windowWidth, 0.05f});
-        // device->DrawLine({(+lander.height) / (float)windowWidth, 0.05f});
-
-        if (engineon) {
-            // draw engine exhaust
-            device->SetIntensity(0.4f);
-
-            // vary exhaust size
-            float h = lander.height;
-            h += (elapsed & 0x3) * h / 6.f;
-
-            device->SetPoint(rotatedPoint(0, h) * windowScale);
-            device->DrawLine(rotatedPoint(-lander.width / 4, lander.height / 4) * windowScale);
-            device->SetPoint(rotatedPoint(0, h) * windowScale);
-            device->DrawLine(rotatedPoint(lander.width / 4, lander.height / 4) * windowScale);
+            static float lastSwitch = 0;
+            lastSwitch += elapsed;
+            if (lastSwitch > 3.f) {  // don't change zoom too often
+                viewport.zoom = std::roundf(100.0f / dis);
+                lastSwitch = 0.0f;
+            }
         }
 
-        // TODO distance to ground should control zoom
-
+        // Pass scene to rendering
         device->WaitSync();
         device->Submit();
     }
