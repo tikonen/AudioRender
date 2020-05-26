@@ -166,7 +166,9 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         {
             float f = fuel;
             reset(posx, posy);
-            fuel = f * fuelRefund;
+            const float minimumFuel = 5.f;
+            fuel = f + initialFuel * fuelRefund;
+            if (fuel < minimumFuel) fuel = minimumFuel;
         }
 
         void reset(float posx, float posy)
@@ -285,7 +287,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
         */
 
-
         if (paused) {
             // just show last render
             device->WaitSync();
@@ -371,7 +372,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     generateLevel(level);
                     viewport.reset();
                     // give some extra fuel
-                    lander.nextLevel(viewport.pos.x, 50, 1.3f);
+                    lander.nextLevel(viewport.pos.x, 50, 1 / 3.f);
                     if (level & 1) lander.velocity.x *= -1;
                     gameState = ST_WAIT;
                     coolDownTimer = 0;
@@ -392,7 +393,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                         generateLevel(level);
                         viewport.reset();
                         // fuel penalty
-                        lander.nextLevel(viewport.pos.x, 50, 0.8f);
+                        lander.nextLevel(viewport.pos.x, 50, -1 / 4.f);
                     } else {
                         level = 0;
                         generateLevel(level);
@@ -446,13 +447,25 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             // Draw terrain
             int xs = terrainxs;
 
-            device->SetPoint({(xs - viewport.pos.x) * windowScale, (terrain[xs] - terrainyOffset) * windowScale});
+            float y0 = (terrain[xs] - terrainyOffset) * windowScale;
             xs += step;
+            bool newSeg = true;
             for (; xs < terrainxe; xs += step) {
+                float y1 = (terrain[xs] - terrainyOffset) * windowScale;
+                if (std::fabsf(y0) > 0.55f && std::fabs(y1) > 0.55f) {  // not visible segment
+                    y0 = y1;
+                    newSeg = true;
+                    continue;
+                }
+                if (newSeg) {
+                    device->SetPoint({(xs - step - viewport.pos.x) * windowScale, y0});
+                    newSeg = false;
+                }
                 const float x = (xs - viewport.pos.x) * windowScale;
-                const float y = (terrain[xs] - terrainyOffset) * windowScale;
-                device->DrawLine({x, y});
+                device->DrawLine({x, y1});
+                y0 = y1;
             }
+
 
             // Mark landing places
             device->SetIntensity(0.6f);
@@ -461,6 +474,8 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 if (p.second < terrainxs) continue;
 
                 const float y = (terrain[p.first] - terrainyOffset + 1) * windowScale;
+                if (std::fabsf(y) > 0.55f) continue;  // not visible
+
                 device->SetPoint({(p.first - viewport.pos.x) * windowScale, y});
                 device->DrawLine({(p.second - viewport.pos.x) * windowScale, y});
             }
@@ -484,6 +499,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
 
         // Lander
+
         device->SetIntensity(0.4f);
 
         // lander position
@@ -512,7 +528,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
 
         if (gameState == ST_PLAY || gameState == ST_WAIT) {
-            // Checke for collisions
+            // Check for collisions
 
             // y coordinate border checks
             if (lander.pos.y < -50) {
