@@ -245,6 +245,7 @@ void RenderView::WinMainProc()
         }
 
         // Notify thread blocking in WaitSync that it can start submitting
+        // FIX: There is race condition that if thread is not in WaitSync it misses the notification.
         m_frameCv.notify_one();
 
         // Wait until submit done.
@@ -351,6 +352,7 @@ void RenderView::Submit()
             drawList->AddCircle(p2p({0, 0}), 0.2f, color, 10, size);
         }
     }
+
     m_frameCv.notify_one();
 }
 
@@ -402,33 +404,6 @@ void RenderView::saveSettings()
     WritePrivateProfileStringA(s_posSection, "flicker", _itos(m_flicker), s_iniFile);
     WritePrivateProfileStringA(s_posSection, "idlebeam", _itos(m_idleBeam), s_iniFile);
 }
-
-/*
-void RenderView::onFrame(const RGBFrameData& frame)
-{
-    if (frame.bits != 24) {
-        return;
-    }
-    HRESULT hr;
-    D3D10_MAPPED_TEXTURE2D mapped;
-    if (FAILED(hr = m_texture->Map(0, D3D10_MAP_WRITE_DISCARD, 0, &mapped))) {
-        printf("Texture map failed. %s", HResultToCString(hr));
-        return;
-    }
-    RGBTRIPLE* src = frame.pData.pRGB24;
-    RGBQUAD* dst = (RGBQUAD*)mapped.pData;
-    int height = min(m_height, frame.height);
-    int width = min(m_width, frame.width);
-    for (int y = 0; y < frame.height; y++) {
-        for (int x = 0; x < frame.width; x++) {
-            RGBTRIPLE p = src[x + y * frame.width];
-            dst[x] = {p.rgbtBlue, p.rgbtGreen, p.rgbtRed, 0xFF};
-        }
-        dst = (RGBQUAD*)((unsigned char*)mapped.pData + y * mapped.RowPitch);
-    }
-    m_texture->Unmap(0);
-}
-*/
 
 void RenderView::createRenderTarget()
 {

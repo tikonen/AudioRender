@@ -28,6 +28,39 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     using Vector2D = glm::ivec2;
     using Vector2Df = glm::vec2;
 
+    struct Timer {
+        const float interval;
+        float cumulative = 0;
+        int flipflop = 1;
+        const bool autoReset;
+
+        Timer(bool autoRes, float t)
+            : interval(t)
+            , autoReset(autoRes)
+        {
+            reset();
+        }
+
+        void reset()
+        {
+            cumulative = 0;
+            flipflop = 0;
+        }
+
+        bool update(float elapseds)
+        {
+            cumulative += elapseds;
+            if (cumulative >= interval) {
+                if (autoReset) {
+                    cumulative = 0;
+                    flipflop = 1 - flipflop;
+                }
+                return true;
+            }
+            return false;
+        }
+    };
+
     struct ViewPort {
         int width;
         int height;
@@ -184,40 +217,35 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
     lander.reset(viewport.pos.x, 50);
 
-    enum GameState { ST_WAIT, ST_PLAY, ST_WIN, ST_FAIL } gameState;
-    gameState = ST_WAIT;
+    using Character = std::vector<std::vector<AudioRender::Point>>;
 
-    bool paused = false;
+    const Character l_a = {{{0, 0}, {2.5f, -10}, {5.f, 0}}, {{2.5f / 2, -4}, {5.f - 2.5f / 2, -4}}};
+    const Character l_f = {{{0, 0}, {0, -10}, {4, -10}}, {{0, -5.f}, {3, -5.f}}};
+    const Character l_i = {{{0, 0}, {0, -10}}};
+    const Character l_k = {{{0, 0}, {0, -10}}, {{4, -10}, {0, -5}, {4, 0}}};
+    const Character l_l = {{{0, -10}, {0, 0}, {3.5f, 0}}};
+    const Character l_o = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};
+    const Character l_p = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}}};
+    const Character l_r = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
+    const Character l_w = {{{0, -10}, {6.f / 3, 0}, {6.f / 2, -6}, {6.f - 6.f / 3, 0}, {6, -10}}};
+    const Character l_n = {{{0, 0}, {0, -10}, {4, 0}, {4, -10}}};
+    const Character l_d = {{{0, 0}, {0, -10}, {4, -8}, {4, -2}, {0, 0}}};
 
-    using Letter = std::vector<std::vector<AudioRender::Point>>;
+    const Character d0 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}, {4, -10}}};
+    const Character d1 = {{{2, 0}, {2, -10}, {1, -9}}};
+    const Character d2 = {{{0, -10}, {4, -10}, {4, -5}, {0, -5}, {0, 0}, {4, 0}}};
+    const Character d3 = {{{0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{1, -5}, {4, -5}}};
+    const Character d4 = {{{4, 0}, {4, -10}, {0, -4}, {5, -4}}};
+    const Character d5 = {{{0, 0}, {4, 0}, {4, -5}, {0.5, -5}, {0.5, -10}, {4, -10}}};
+    const Character d6 = {{{0, -5}, {4, -5}, {4, 0}, {0, 0}, {0, -10}, {4, -10}}};
+    const Character d7 = {{{4, 0}, {4, -10}, {0, -10}}};
+    const Character d8 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{0, -5}, {4, -5}}};
+    const Character d9 = {{{3, 0}, {4, -10}, {0, -10}, {0, -6}, {4, -6}}};
 
-    const Letter l_a = {{{0, 0}, {2.5f, -10}, {5.f, 0}}, {{2.5f / 2, -4}, {5.f - 2.5f / 2, -4}}};
-    const Letter l_f = {{{0, 0}, {0, -10}, {4, -10}}, {{0, -5.f}, {3, -5.f}}};
-    const Letter l_i = {{{0, 0}, {0, -10}}};
-    const Letter l_k = {{{0, 0}, {0, -10}}, {{4, -10}, {0, -5}, {4, 0}}};
-    const Letter l_l = {{{0, -10}, {0, 0}, {3.5f, 0}}};
-    const Letter l_o = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};
-    const Letter l_p = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}}};
-    const Letter l_r = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
-    const Letter l_w = {{{0, -10}, {6.f / 3, 0}, {6.f / 2, -6}, {6.f - 6.f / 3, 0}, {6, -10}}};
-    const Letter l_n = {{{0, 0}, {0, -10}, {4, 0}, {4, -10}}};
-    const Letter l_d = {{{0, 0}, {0, -10}, {4, -8}, {4, -2}, {0, 0}}};
-
-    const Letter d0 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}, {4, -10}}};
-    const Letter d1 = {{{2, 0}, {2, -10}, {1, -9}}};
-    const Letter d2 = {{{0, -10}, {4, -10}, {4, -5}, {0, -5}, {0, 0}, {4, 0}}};
-    const Letter d3 = {{{0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{1, -5}, {4, -5}}};
-    const Letter d4 = {{{4, 0}, {4, -10}, {0, -4}, {5, -4}}};
-    const Letter d5 = {{{0, 0}, {4, 0}, {4, -5}, {0.5, -5}, {0.5, -10}, {4, -10}}};
-    const Letter d6 = {{{0, -5}, {4, -5}, {4, 0}, {0, 0}, {0, -10}, {4, -10}}};
-    const Letter d7 = {{{4, 0}, {4, -10}, {0, -10}}};
-    const Letter d8 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{0, -5}, {4, -5}}};
-    const Letter d9 = {{{3, 0}, {4, -10}, {0, -10}, {0, -6}, {4, -6}}};
-
-    const Letter digits[10] = {d0, d1, d2, d3, d4, d5, d6, d7, d8, d9};
+    const Character digits[10] = {d0, d1, d2, d3, d4, d5, d6, d7, d8, d9};
 
     float letterScale = 1.f / 10 * 0.2f;
-    auto drawLetter = [&](const Letter& lf, AudioRender::Point offset) {
+    auto drawCharacter = [&](const Character& lf, AudioRender::Point offset) {
         for (const auto& seg : lf) {
             device->SetPoint((seg[0] + offset) * letterScale);
             for (size_t i = 1; i < seg.size(); i++) {
@@ -227,17 +255,13 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     };
 
     LunarLander::Map map;
-    std::vector<int> terrain;
-    std::vector<std::pair<int, int>> landingPlaces;
 
-    auto generateLevel = [&](int level) {
-        map = generateTerrain(level, 400);
-        terrain = map.terrain;
-        landingPlaces = map.landingPlaces;
-    };
+    auto generateLevel = [&](int level) { map = generateTerrain(level, 400); };
 
     // Restrics state change speed
-    float coolDownTimer = 0;
+    Timer coolDownTimer(false, 2.0f);
+    enum GameState { ST_WAIT, ST_PLAY, ST_WIN, ST_FAIL } gameState = ST_WAIT;
+    bool paused = false;
     int level = 0;
     generateLevel(level);
 
@@ -246,13 +270,9 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         static auto ticks = system_clock::now();
         auto now = system_clock::now();
         long long elapsed = duration_cast<milliseconds>(now - ticks).count();
-
-        if (elapsed < 1000 / 100) {  // Sanity limit
-            Sleep(1);
-            continue;
-        }
         ticks = now;
 
+        // Controller
         controller.update();
 
         if (controller.pause.pressed()) {
@@ -261,7 +281,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         /*
         {
-            static float timer = 0;
+            static Timer timer(true, 1.f);
             static int num = 0;
             device->Begin();
             device->SetIntensity(0.2f);
@@ -269,17 +289,14 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             float offset = 0;
             int digit = num;
             do {
-                drawLetter(digits[digit % 10], {offset, -5});
+                drawCharacter(digits[digit % 10], {offset, -5});
                 offset -= 5.5f;
                 digit /= 10;
             } while (digit > 0);
-            drawLetter(l_l, {offset, -5});
+            drawCharacter(l_l, {offset, -5});
 
-            timer += elapsed / 1000.f;
-            if (timer > 1) {
-                num++;
-                timer = 0;
-            }
+            if (timer.update(elapsed / 1000.f)) num++;
+
 
             device->WaitSync();
             device->Submit();
@@ -297,24 +314,12 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         device->Begin();
         device->SetIntensity(0.2f);
 
-
         if (controller.zoomIn.pressed()) {
             viewport.zoom += 1.f;
         }
         if (controller.zoomOut.pressed()) {
             viewport.zoom -= 1.f;
         }
-        /*
-        if (controller.left.status()) {
-            // viewport.pos.x = std::max(viewport.pos.x - 1, 0.f);
-        }
-        if (controller.right.status()) {
-            // viewport.pos.x = std::min(viewport.pos.x + 1, (float)viewport.width);
-        }
-        if (controller.throttle.status()) {
-            // viewport.pos.y = std::max(viewport.pos.y - 1, 0);
-        }
-        */
 
         if (controller.reset.pressed()) {
             // reset game state
@@ -323,51 +328,39 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             viewport.reset();
             lander.reset(viewport.pos.x, 50);
             gameState = ST_WAIT;
-            coolDownTimer = 0;
+            coolDownTimer.reset();
         }
 
         if (gameState == ST_WAIT) {
-            static float timer = 0;
-            static int blink = 1;
-            float e = elapsed / 1000.f;
-            timer += e;
-            if (timer > .5f) {
-                timer = 0;
-                blink = 1 - blink;
-            }
-            blink = 1;
-            if (blink) {
-                // L A N D
-                /*
-                drawLetter(l_l, {-11, -5});
-                drawLetter(l_a, {-6, -5});
-                drawLetter(l_n, {0, -5});
-                drawLetter(l_d, {6, -5});
-                */
-                // Level
-                float offset = 0;
-                int digit = level;
-                do {
-                    drawLetter(digits[digit % 10], {offset, -5});
-                    offset -= 5.5f;
-                    digit /= 10;
-                } while (digit > 0);
-                drawLetter(l_l, {offset, -5});
-            }
+            // L A N D
+            /*
+            drawCharacter(l_l, {-11, -5});
+            drawCharacter(l_a, {-6, -5});
+            drawCharacter(l_n, {0, -5});
+            drawCharacter(l_d, {6, -5});
+            */
+            // Level
+            float offset = 0;
+            int digit = level;
+            do {
+                drawCharacter(digits[digit % 10], {offset, -5});
+                offset -= 5.5f;
+                digit /= 10;
+            } while (digit > 0);
+            drawCharacter(l_l, {offset, -5});
 
             if (controller.throttle.pressed() || controller.left.pressed() || controller.right.pressed()) {
                 gameState = ST_PLAY;
             }
         } else if (gameState == ST_WIN) {
             // W I N
-            drawLetter(l_w, {-8, -5});
-            drawLetter(l_i, {0, -5});
-            drawLetter(l_n, {2, -5});
+            drawCharacter(l_w, {-8, -5});
+            drawCharacter(l_i, {0, -5});
+            drawCharacter(l_n, {2, -5});
 
-            coolDownTimer += elapsed / 1000.f;
-            if (coolDownTimer > 2) {
+            if (coolDownTimer.update(elapsed / 1000.f)) {
                 if (controller.throttle.pressed()) {
-                    // next level
+                    // advance to next level
                     level++;
                     generateLevel(level);
                     viewport.reset();
@@ -375,26 +368,27 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     lander.nextLevel(viewport.pos.x, 50, 1 / 3.f);
                     if (level & 1) lander.velocity.x *= -1;
                     gameState = ST_WAIT;
-                    coolDownTimer = 0;
+                    coolDownTimer.reset();
                 }
             }
         } else if (gameState == ST_FAIL) {
             // F A I L
-            drawLetter(l_f, {-8, -5});
-            drawLetter(l_a, {-3, -5});
-            drawLetter(l_i, {3, -5});
-            drawLetter(l_l, {5, -5});
+            drawCharacter(l_f, {-8, -5});
+            drawCharacter(l_a, {-3, -5});
+            drawCharacter(l_i, {3, -5});
+            drawCharacter(l_l, {5, -5});
 
-            coolDownTimer += elapsed / 1000.f;
-            if (coolDownTimer > 2) {
+            if (coolDownTimer.update(elapsed / 1000.f)) {
                 if (controller.throttle.pressed()) {
                     if (lander.fuel > 0) {
+                        // advance to next level
                         level++;
                         generateLevel(level);
                         viewport.reset();
                         // fuel penalty
                         lander.nextLevel(viewport.pos.x, 50, -1 / 4.f);
                     } else {
+                        // Game over
                         level = 0;
                         generateLevel(level);
                         viewport.reset();
@@ -402,11 +396,12 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     }
                     if (level & 1) lander.velocity.x *= -1;
                     gameState = ST_WAIT;
-                    coolDownTimer = 0;
+                    coolDownTimer.reset();
                 }
             }
         }
 
+        // Viewport
         viewport.zoom = std::max(viewport.zoom, 1.f);
         viewport.zoom = std::min(viewport.zoom, 15.f);
 
@@ -419,12 +414,13 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         // Get visible terrain borders
         int terrainxs = viewport.terrainPos.x + std::lroundf(viewport.pos.x) - windowWidth / 2;
 
+        // Enforce borders
         if (terrainxs < 0) {
             viewport.pos.x = windowWidth / 2.f;
             terrainxs = 0;
         }
-        if (terrainxs + windowWidth > terrain.size()) {
-            terrainxs = (int)terrain.size() - windowWidth;
+        if (terrainxs + windowWidth > map.terrain.size()) {
+            terrainxs = (int)map.terrain.size() - windowWidth;
             viewport.pos.x = viewport.width - windowWidth / 2.f;
         }
 
@@ -438,8 +434,8 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
             int terrainxe = terrainxs + windowWidth;
             // sanity limits
-            if (terrainxe > terrain.size()) {
-                terrainxe = (int)terrain.size();
+            if (terrainxe > map.terrain.size()) {
+                terrainxe = (int)map.terrain.size();
             }
 
             float terrainyOffset = viewport.pos.y - viewport.terrainPos.y;
@@ -447,11 +443,11 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             // Draw terrain
             int xs = terrainxs;
 
-            float y0 = (terrain[xs] - terrainyOffset) * windowScale;
+            float y0 = (map.terrain[xs] - terrainyOffset) * windowScale;
             xs += step;
             bool newSeg = true;
             for (; xs < terrainxe; xs += step) {
-                float y1 = (terrain[xs] - terrainyOffset) * windowScale;
+                float y1 = (map.terrain[xs] - terrainyOffset) * windowScale;
                 if (std::fabsf(y0) > 0.55f && std::fabs(y1) > 0.55f) {  // not visible segment
                     y0 = y1;
                     newSeg = true;
@@ -466,14 +462,13 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 y0 = y1;
             }
 
-
             // Mark landing places
             device->SetIntensity(0.6f);
-            for (auto& p : landingPlaces) {
+            for (auto& p : map.landingPlaces) {
                 if (p.first > terrainxe) continue;
                 if (p.second < terrainxs) continue;
 
-                const float y = (terrain[p.first] - terrainyOffset + 1) * windowScale;
+                const float y = (map.terrain[p.first] - terrainyOffset + 1) * windowScale;
                 if (std::fabsf(y) > 0.55f) continue;  // not visible
 
                 device->SetPoint({(p.first - viewport.pos.x) * windowScale, y});
@@ -481,8 +476,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             }
         }
 
-        // Update lander
-        float dt = elapsed / 1000.f;
+        // Lander
         int engineon = controller.throttle.status();
         if (gameState == ST_PLAY || gameState == ST_WAIT) {
             int rotation = 0;
@@ -493,12 +487,10 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 rotation += 1;
             }
 
-            lander.update(dt, engineon, rotation);
+            lander.update(elapsed / 1000.f, engineon, rotation);
         } else {
             engineon = false;
         }
-
-        // Lander
 
         device->SetIntensity(0.4f);
 
@@ -541,6 +533,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             }
 
             bool collided = false;
+            // Check intersection for each lander line segment with terrain segments
             for (size_t k = 0; k < points.size(); k++) {
                 float lp1x = points[k].x + lander.pos.x;
                 float lp1y = points[k].y + lander.pos.y;
@@ -548,11 +541,11 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 float lp2y = points[(k + 1) % points.size()].y + lander.pos.y;
 
                 int sx = (int)std::min(std::floorf(lp1x), std::floorf(lp2x));
-                for (int i = std::max(0, sx - 4); i < std::min(sx + 4, (int)terrain.size() - 1) && !collided; i++) {
+                for (int i = std::max(0, sx - 4); i < std::min(sx + 4, (int)map.terrain.size() - 1) && !collided; i++) {
                     float gp1x = (float)i;
-                    float gp1y = (float)terrain[i];
+                    float gp1y = (float)map.terrain[i];
                     float gp2x = (float)i + 1;
-                    float gp2y = (float)terrain[i + 1];
+                    float gp2y = (float)map.terrain[i + 1];
 
                     auto ccw = [](float ax, float ay, float bx, float by, float cx, float cy) { return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax); };
                     auto intersect = [ccw](float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy) {
@@ -575,7 +568,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     // check if on landing pad
                     int lxs = (int)std::floorf(points[1].x + lander.pos.x);
                     int lxe = (int)std::ceilf(points[3].x + lander.pos.x);
-                    for (auto& lp : landingPlaces) {
+                    for (auto& lp : map.landingPlaces) {
                         if (lp.first <= lxs && lp.second >= lxe) {
                             // at landing pad
                             if (std::fabsf(lander.velocity.x) <= maxHorisontalVelocity && std::fabsf(lander.velocity.y) <= maxVerticalVelocity) {
@@ -636,49 +629,44 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 device->SetPoint(exhaust[2] * windowScale);
                 device->DrawLine(exhaust[3] * windowScale);
             }
+        }
 
-            // indicate fuel
-            {
-                const float lowFuelAlarmLevel = .15f;
+        // indicate fuel
+        {
+            const float lowFuelAlarmLevel = .15f;
 
-                float p = lander.fuel / lander.initialFuel;
-                if (p > 0) {
-                    static float timer = 0;
-                    static int blink = 1;
-                    float e = elapsed / 1000.f;
-                    timer += e;
-                    if (timer > .3f) {
-                        timer = 0;
-                        blink = 1 - blink;
-                    }
-                    if (p > lowFuelAlarmLevel || blink) {  // blink if low fuel
-                        glm::vec2 needle(-0.5, 0);
-                        const int steps = 20;
-                        needle = glm::rotate(needle, DEGTORAD(45 * p));
-                        const float angleStep = DEGTORAD(90.f / steps);
-                        device->SetPoint({needle.x, -needle.y});
-                        for (float r = 0; r <= p; r += 1.f / steps) {
-                            needle = glm::rotate(needle, -angleStep);
-                            device->DrawLine({needle.x, -needle.y});
-                        }
+            float p = lander.fuel / lander.initialFuel;
+            if (p > 0) {
+                static Timer blinkTimer(true, 0.3f);
+                blinkTimer.update(elapsed / 1000.f);
+
+                if (p > lowFuelAlarmLevel || blinkTimer.flipflop) {  // blink if low fuel
+                    glm::vec2 needle(-0.5, 0);
+                    const int steps = 20;
+                    needle = glm::rotate(needle, DEGTORAD(45 * p));
+                    const float angleStep = DEGTORAD(90.f / steps);
+                    device->SetPoint({needle.x, -needle.y});
+                    for (float r = 0; r <= p; r += 1.f / steps) {
+                        needle = glm::rotate(needle, -angleStep);
+                        device->DrawLine({needle.x, -needle.y});
                     }
                 }
             }
         }
 
+
 #if 0
-        // check distance to ground and update zoom
+        // check distance to ground and automatically update zoom
         {
             int x = (int)std::roundf(lander.pos.x);
             if (x < 0) x = 0;
             if (x > terrain.size()) x = (int)terrain.size() - 1;
             float dis = std::fabsf(lander.pos.y - terrain[x]);
 
-            static float lastSwitch = 0;
-            lastSwitch += elapsed;
-            if (lastSwitch > 3.f) {  // don't change zoom too often
+            static Timer lastSwitch(false, 2.f);
+            if (lastSwitch.update(elapsed / 1000.f)) {  // don't change zoom too often
                 viewport.zoom = std::roundf(100.0f / dis);
-                lastSwitch = 0.0f;
+                lastSwitch.reset();
             }
         }
 #endif
