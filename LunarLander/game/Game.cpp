@@ -217,46 +217,114 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
     lander.reset(viewport.pos.x, 50);
 
-    using Character = std::vector<std::vector<AudioRender::Point>>;
+    struct TextUtil {
+        using Character = std::vector<std::vector<AudioRender::Point>>;
 
-    const Character l_a = {{{0, 0}, {2.5f, -10}, {5.f, 0}}, {{2.5f / 2, -4}, {5.f - 2.5f / 2, -4}}};
-    const Character l_f = {{{0, 0}, {0, -10}, {4, -10}}, {{0, -5.f}, {3, -5.f}}};
-    const Character l_i = {{{0, 0}, {0, -10}}};
-    const Character l_k = {{{0, 0}, {0, -10}}, {{4, -10}, {0, -5}, {4, 0}}};
-    const Character l_l = {{{0, -10}, {0, 0}, {3.5f, 0}}};
-    const Character l_o = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};
-    const Character l_p = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}}};
-    const Character l_r = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
-    const Character l_w = {{{0, -10}, {6.f / 3, 0}, {6.f / 2, -6}, {6.f - 6.f / 3, 0}, {6, -10}}};
-    const Character l_n = {{{0, 0}, {0, -10}, {4, 0}, {4, -10}}};
-    const Character l_d = {{{0, 0}, {0, -10}, {4, -8}, {4, -2}, {0, 0}}};
+        const Character l_A = {{{0, 0}, {2.5f, -10}, {5.f, 0}}, {{2.5f / 2, -4}, {5.f - 2.5f / 2, -4}}};
+        const Character l_F = {{{0, 0}, {0, -10}, {4, -10}}, {{0, -5.f}, {3, -5.f}}};
+        const Character l_I = {{{0, 0}, {0, -10}}};
+        const Character l_K = {{{0, 0}, {0, -10}}, {{4, -10}, {0, -5}, {4, 0}}};
+        const Character l_L = {{{0, -10}, {0, 0}, {3.5f, 0}}};
+        const Character l_O = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};
+        const Character l_P = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}}};
+        const Character l_R = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
+        const Character l_W = {{{0, -10}, {6.f / 3, 0}, {6.f / 2, -6}, {6.f - 6.f / 3, 0}, {6, -10}}};
+        const Character l_N = {{{0, 0}, {0, -10}, {4, 0}, {4, -10}}};
+        const Character l_D = {{{0, 0}, {0, -10}, {4, -8}, {4, -2}, {0, 0}}};
+        const Character l__ = {{{0, 0}, {4, 0}}};
 
-    const Character d0 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}, {4, -10}}};
-    const Character d1 = {{{2, 0}, {2, -10}, {1, -9}}};
-    const Character d2 = {{{0, -10}, {4, -10}, {4, -5}, {0, -5}, {0, 0}, {4, 0}}};
-    const Character d3 = {{{0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{1, -5}, {4, -5}}};
-    const Character d4 = {{{4, 0}, {4, -10}, {0, -4}, {5, -4}}};
-    const Character d5 = {{{0, 0}, {4, 0}, {4, -5}, {0.5, -5}, {0.5, -10}, {4, -10}}};
-    const Character d6 = {{{0, -5}, {4, -5}, {4, 0}, {0, 0}, {0, -10}, {4, -10}}};
-    const Character d7 = {{{4, 0}, {4, -10}, {0, -10}}};
-    const Character d8 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{0, -5}, {4, -5}}};
-    const Character d9 = {{{3, 0}, {4, -10}, {0, -10}, {0, -6}, {4, -6}}};
+        const Character d0 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}, {4, -10}}};
+        const Character d1 = {{{2, 0}, {2, -10}, {1, -9}}};
+        const Character d2 = {{{0, -10}, {4, -10}, {4, -5}, {0, -5}, {0, 0}, {4, 0}}};
+        const Character d3 = {{{0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{1, -5}, {4, -5}}};
+        const Character d4 = {{{4, 0}, {4, -10}, {0, -4}, {5, -4}}};
+        const Character d5 = {{{0, 0}, {4, 0}, {4, -5}, {0.5, -5}, {0.5, -10}, {4, -10}}};
+        const Character d6 = {{{0, -5}, {4, -5}, {4, 0}, {0, 0}, {0, -10}, {4, -10}}};
+        const Character d7 = {{{4, 0}, {4, -10}, {0, -10}}};
+        const Character d8 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{0, -5}, {4, -5}}};
+        const Character d9 = {{{3, 0}, {4, -10}, {0, -10}, {0, -6}, {4, -6}}};
 
-    const Character digits[10] = {d0, d1, d2, d3, d4, d5, d6, d7, d8, d9};
+        const Character* digits[10] = {&d0, &d1, &d2, &d3, &d4, &d5, &d6, &d7, &d8, &d9};
 
-    float letterScale = 1.f / 10 * 0.2f;
-    auto drawCharacter = [&](const Character& lf, AudioRender::Point offset) {
-        for (const auto& seg : lf) {
-            device->SetPoint((seg[0] + offset) * letterScale);
-            for (size_t i = 1; i < seg.size(); i++) {
-                device->DrawLine((seg[i] + offset) * letterScale);
+        const float letterScale = 1.f / 10 * 0.2f;
+        AudioRender::IDrawDevice* device;
+        const Character* letters[0xFF + 1];
+
+        TextUtil(AudioRender::IDrawDevice* drawDevice)
+            : device(drawDevice)
+        {
+            for (int i = 0; i <= 0xFF; i++) {
+                letters[i] = &l__;
             }
+            letters['A'] = &l_A;
+            letters['F'] = &l_F;
+            letters['I'] = &l_I;
+            letters['K'] = &l_K;
+            letters['L'] = &l_L;
+            letters['O'] = &l_O;
+            letters['P'] = &l_P;
+            letters['R'] = &l_R;
+            letters['W'] = &l_W;
+            letters['N'] = &l_N;
+            letters['D'] = &l_D;
+            letters['0'] = &d0;
+            letters['1'] = &d1;
+            letters['2'] = &d2;
+            letters['3'] = &d3;
+            letters['4'] = &d4;
+            letters['5'] = &d5;
+            letters['6'] = &d6;
+            letters['7'] = &d7;
+            letters['8'] = &d8;
+            letters['9'] = &d9;
         }
-    };
+
+        void drawCharacter(char c, float xpos, float ypos) { drawCharacter(letters[c], xpos, ypos); };
+
+        void drawDigit(int d, float xpos, float ypos) { drawCharacter(digits[d % 10], xpos, ypos); };
+
+        void writeText(const char* text, float xpos, float ypos)
+        {
+            static float widthCache[0xFF + 1] = {0};
+            const float spacing = 1.f;
+
+            while (char c = *text++) {
+                const Character* cr = letters[c];
+
+                float width = widthCache[c];
+                if (width == 0.0f) {
+                    float minx = std::numeric_limits<float>::max();
+                    float maxx = std::numeric_limits<float>::min();
+                    for (auto& seg : *cr) {
+                        for (auto& p : seg) {
+                            minx = std::min(minx, p.x);
+                            maxx = std::max(maxx, p.x);
+                        }
+                    }
+                    width = widthCache[c] = std::max(std::abs(maxx - minx), 1.f);
+                }
+                drawCharacter(cr, xpos, ypos);
+                xpos += width + spacing;
+            }
+        };
+
+    private:
+        void drawCharacter(const Character* lf, float xpos, float ypos)
+        {
+            const AudioRender::Point offset{xpos, ypos};
+            for (const auto& seg : *lf) {
+                device->SetPoint((seg[0] + offset) * letterScale);
+                for (size_t i = 1; i < seg.size(); i++) {
+                    device->DrawLine((seg[i] + offset) * letterScale);
+                }
+            }
+        };
+
+    } textUtil(device);
 
     LunarLander::Map map;
 
-    auto generateLevel = [&](int level) { map = generateTerrain(level, 400); };
+    auto generateLevel = [&](int level) { map = generateTerrain(level, viewport.width); };
 
     // Restrics state change speed
     Timer coolDownTimer(false, 2.0f);
@@ -332,31 +400,22 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
 
         if (gameState == ST_WAIT) {
-            // L A N D
-            /*
-            drawCharacter(l_l, {-11, -5});
-            drawCharacter(l_a, {-6, -5});
-            drawCharacter(l_n, {0, -5});
-            drawCharacter(l_d, {6, -5});
-            */
             // Level
             float offset = 0;
             int digit = level;
             do {
-                drawCharacter(digits[digit % 10], {offset, -5});
+                textUtil.drawDigit(digit % 10, offset, -5);
                 offset -= 5.5f;
                 digit /= 10;
             } while (digit > 0);
-            drawCharacter(l_l, {offset, -5});
+            textUtil.drawCharacter('L', offset, -5);
 
             if (controller.throttle.pressed() || controller.left.pressed() || controller.right.pressed()) {
                 gameState = ST_PLAY;
             }
         } else if (gameState == ST_WIN) {
             // W I N
-            drawCharacter(l_w, {-8, -5});
-            drawCharacter(l_i, {0, -5});
-            drawCharacter(l_n, {2, -5});
+            textUtil.writeText("WIN", -8, -5.2f);
 
             if (coolDownTimer.update(elapsed / 1000.f)) {
                 if (controller.throttle.pressed()) {
@@ -373,10 +432,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             }
         } else if (gameState == ST_FAIL) {
             // F A I L
-            drawCharacter(l_f, {-8, -5});
-            drawCharacter(l_a, {-3, -5});
-            drawCharacter(l_i, {3, -5});
-            drawCharacter(l_l, {5, -5});
+            textUtil.writeText("FAIL", -8, -5.2f);
 
             if (coolDownTimer.update(elapsed / 1000.f)) {
                 if (controller.throttle.pressed()) {
