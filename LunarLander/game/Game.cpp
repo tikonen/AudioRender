@@ -18,317 +18,321 @@
 #include "Terrain.hpp"
 
 #define G 1.625f  // ms^2
+#define DEGTORAD(d) ((float)M_PI / 180.f * (d))
 
 namespace LunarLander
 {
+struct Timer {
+    const float interval;
+    float cumulative = 0;
+    int flipflop = 1;
+    const bool autoReset;
+
+    Timer(bool autoRes, float t)
+        : interval(t)
+        , autoReset(autoRes)
+    {
+        reset();
+    }
+
+    void reset()
+    {
+        cumulative = 0;
+        flipflop = 0;
+    }
+
+    bool update(float elapseds)
+    {
+        cumulative += elapseds;
+        if (cumulative >= interval) {
+            if (autoReset) {
+                cumulative = 0;
+                flipflop = 1 - flipflop;
+            }
+            return true;
+        }
+        return false;
+    }
+};
+
+struct Button {
+    virtual ~Button() = default;
+    virtual bool status() = 0;
+    virtual bool pressed() = 0;
+};
+
+struct Key : Button {
+    bool keyDown = false;
+    bool keyStatus = false;
+    int keyCode;
+    bool keyPressed = false;
+    Key(int key)
+        : keyCode(key)
+    {
+        keyDown = 0x8000 & GetKeyState(keyCode);
+    }
+
+    void update()
+    {
+        int state = 0x8000 & GetKeyState(keyCode);
+        keyPressed = !keyDown && state;
+        keyDown = state;
+    }
+
+    bool status() override { return keyDown; }
+    bool pressed() override { return keyPressed; }
+};
+
+struct TextUtil {
+    using Character = std::vector<std::vector<AudioRender::Point>>;
+
+    const Character l_A = {{{0, 0}, {2.5f, -10}, {5.f, 0}}, {{2.5f / 2, -4}, {5.f - 2.5f / 2, -4}}};
+    const Character l_F = {{{0, 0}, {0, -10}, {4, -10}}, {{0, -5.f}, {3, -5.f}}};
+    const Character l_I = {{{0, 0}, {0, -10}}};
+    const Character l_K = {{{0, 0}, {0, -10}}, {{4, -10}, {0, -5}, {4, 0}}};
+    const Character l_L = {{{0, -10}, {0, 0}, {3.5f, 0}}};
+    const Character l_O = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};
+    const Character l_P = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}}};
+    const Character l_R = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
+    const Character l_W = {{{0, -10}, {6.f / 3, 0}, {6.f / 2, -6}, {6.f - 6.f / 3, 0}, {6, -10}}};
+    const Character l_N = {{{0, 0}, {0, -10}, {4, 0}, {4, -10}}};
+    const Character l_D = {{{0, 0}, {0, -10}, {4, -8}, {4, -2}, {0, 0}}};
+    const Character l__ = {{{0, 0}, {4, 0}}};
+
+    const Character d0 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}, {4, -10}}};
+    const Character d1 = {{{2, 0}, {2, -10}, {1, -9}}};
+    const Character d2 = {{{0, -10}, {4, -10}, {4, -5}, {0, -5}, {0, 0}, {4, 0}}};
+    const Character d3 = {{{0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{1, -5}, {4, -5}}};
+    const Character d4 = {{{4, 0}, {4, -10}, {0, -4}, {5, -4}}};
+    const Character d5 = {{{0, 0}, {4, 0}, {4, -5}, {0.5, -5}, {0.5, -10}, {4, -10}}};
+    const Character d6 = {{{0, -5}, {4, -5}, {4, 0}, {0, 0}, {0, -10}, {4, -10}}};
+    const Character d7 = {{{4, 0}, {4, -10}, {0, -10}}};
+    const Character d8 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{0, -5}, {4, -5}}};
+    const Character d9 = {{{3, 0}, {4, -10}, {0, -10}, {0, -6}, {4, -6}}};
+
+    const Character* digits[10] = {&d0, &d1, &d2, &d3, &d4, &d5, &d6, &d7, &d8, &d9};
+
+    const float letterScale = 1.f / 10 * 0.2f;
+    AudioRender::IDrawDevice* device;
+    const Character* letters[0xFF + 1];
+
+    TextUtil(AudioRender::IDrawDevice* drawDevice)
+        : device(drawDevice)
+    {
+        for (int i = 0; i <= 0xFF; i++) {
+            letters[i] = &l__;
+        }
+        letters['A'] = &l_A;
+        letters['F'] = &l_F;
+        letters['I'] = &l_I;
+        letters['K'] = &l_K;
+        letters['L'] = &l_L;
+        letters['O'] = &l_O;
+        letters['P'] = &l_P;
+        letters['R'] = &l_R;
+        letters['W'] = &l_W;
+        letters['N'] = &l_N;
+        letters['D'] = &l_D;
+        letters['0'] = &d0;
+        letters['1'] = &d1;
+        letters['2'] = &d2;
+        letters['3'] = &d3;
+        letters['4'] = &d4;
+        letters['5'] = &d5;
+        letters['6'] = &d6;
+        letters['7'] = &d7;
+        letters['8'] = &d8;
+        letters['9'] = &d9;
+    }
+
+    void drawCharacter(char c, float xpos, float ypos) { drawCharacter(letters[c], xpos, ypos); };
+
+    void drawDigit(int d, float xpos, float ypos) { drawCharacter(digits[d % 10], xpos, ypos); };
+
+    void writeText(const char* text, float xpos, float ypos)
+    {
+        static float widthCache[0xFF + 1] = {0};
+        const float spacing = 1.f;
+
+        while (char c = *text++) {
+            const Character* cr = letters[c];
+
+            float width = widthCache[c];
+            if (width == 0.0f) {
+                float minx = std::numeric_limits<float>::max();
+                float maxx = std::numeric_limits<float>::min();
+                for (auto& seg : *cr) {
+                    for (auto& p : seg) {
+                        minx = std::min(minx, p.x);
+                        maxx = std::max(maxx, p.x);
+                    }
+                }
+                width = widthCache[c] = std::max(std::abs(maxx - minx), 1.f);
+            }
+            drawCharacter(cr, xpos, ypos);
+            xpos += width + spacing;
+        }
+    };
+
+private:
+    void drawCharacter(const Character* lf, float xpos, float ypos)
+    {
+        const AudioRender::Point offset{xpos, ypos};
+        for (const auto& seg : *lf) {
+            device->SetPoint((seg[0] + offset) * letterScale);
+            for (size_t i = 1; i < seg.size(); i++) {
+                device->DrawLine((seg[i] + offset) * letterScale);
+            }
+        }
+    };
+};
+
+using Vector2D = glm::ivec2;
+using Vector2Df = glm::vec2;
+
+static inline Vector2Df vrotate(const Vector2Df v, float rads) { return glm::rotate(std::move(v), rads); }
+
+struct ViewPort {
+    int width;
+    int height;
+    Vector2Df pos;
+    const Vector2D terrainPos = {0, 0};
+    float zoom;
+
+    void reset()
+    {
+        height = 400;
+        width = 400;
+        pos = {200.f, 150.f};
+        zoom = 3;
+    }
+};
+
+struct Controller {
+    Key left = Key(VK_LEFT);
+    Key right = Key(VK_RIGHT);
+    Key throttle = Key(VK_SPACE);
+    // Key down = Key(VK_DOWN);
+    Key zoomIn = Key(VK_UP);
+    Key zoomOut = Key(VK_DOWN);
+    // Key zoomIn = Key(0x5A);   // Z
+    // Key zoomOut = Key(0x58);  // X
+    Key pause = Key(0x50);  // P
+    Key reset = Key(0x52);  // R
+
+    Controller()
+    {
+        printf(
+            "Arrow Left - Rotate left\n"
+            "Arrow Right - Rotate Right\n"
+            "Space Bar - Thrust\n"
+            "P - Pause Game\n"
+            "Arrow Up - Zoom In\n"
+            "Arrow Down - Zoom Out\n"
+            "R - Reset Game\n");
+    };
+
+    void update()
+    {
+        left.update();
+        right.update();
+        throttle.update();
+        zoomIn.update();
+        zoomOut.update();
+        pause.update();
+        reset.update();
+    }
+};
+
+struct Lander {
+    const Vector2Df A = {0, G};
+    Vector2Df velocity;
+    Vector2Df pos;
+    float angularSpeed;
+    float angle;  // in radians
+    float fuel;   // burntime in seconds
+
+    const float height = 5.f;
+    const float width = 5.f;
+
+    Lander() { reset(0, 0); }
+
+    // Parameters
+    const float thrust = 3 * G;
+    const float angularAcc = DEGTORAD(40);  // d/s^2
+    const Vector2Df initialVelocity = {3, 0};
+    const float initialFuel = 60.f;
+    const float mass = 100.f;  // in fuel units
+
+    void update(float t, int& engine, int rotation)
+    {
+        // lander rotation
+        const float dampening = 0.80f;
+
+        float adelta = angularAcc * rotation * t * mass / (mass + fuel);
+        angle += (angularSpeed + adelta / 2.f) * t;
+        angularSpeed += adelta;
+        if (!rotation) angularSpeed -= angularSpeed * dampening * t;
+        if (angle > (float)M_PI) angle = -(2 * (float)M_PI - angle);
+        if (angle < (float)-M_PI) angle = (2 * (float)M_PI + angle);
+
+        // lander position
+        const float accScale = 1 / 2.f;
+
+        if (engine && fuel > 0) {
+            fuel -= t;
+            if (fuel < 0) {
+                fuel = 0;
+            }
+        } else {
+            engine = 0;
+        }
+        Vector2Df tvec = Vector2Df(0, engine * -thrust * mass / (mass + fuel));
+        Vector2Df totalAcc = A + vrotate(tvec, angle);
+
+        Vector2Df vdelta = totalAcc * t * accScale;
+        pos += (velocity + vdelta / 2.f) * t;
+        velocity += vdelta;
+    }
+
+    void nextLevel(float posx, float posy, float fuelRefund)
+    {
+        float f = fuel;
+        reset(posx, posy);
+        const float minimumFuel = 5.f;
+        fuel = f + initialFuel * fuelRefund;
+        if (fuel < minimumFuel) fuel = minimumFuel;
+    }
+
+    void reset(float posx, float posy)
+    {
+        velocity = initialVelocity;
+        angularSpeed = 0;
+        angle = 0;
+        fuel = initialFuel;
+        pos = {posx, posy};
+    }
+};
+
+
 void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 {
-    float i = 0;
-
-    using Vector2D = glm::ivec2;
-    using Vector2Df = glm::vec2;
-
-    struct Timer {
-        const float interval;
-        float cumulative = 0;
-        int flipflop = 1;
-        const bool autoReset;
-
-        Timer(bool autoRes, float t)
-            : interval(t)
-            , autoReset(autoRes)
-        {
-            reset();
-        }
-
-        void reset()
-        {
-            cumulative = 0;
-            flipflop = 0;
-        }
-
-        bool update(float elapseds)
-        {
-            cumulative += elapseds;
-            if (cumulative >= interval) {
-                if (autoReset) {
-                    cumulative = 0;
-                    flipflop = 1 - flipflop;
-                }
-                return true;
-            }
-            return false;
-        }
-    };
-
-    struct ViewPort {
-        int width;
-        int height;
-        Vector2Df pos;
-        const Vector2D terrainPos = {0, 0};
-        float zoom;
-
-        void reset()
-        {
-            height = 400;
-            width = 400;
-            pos = {200.f, 150.f};
-            zoom = 3;
-        }
-    } viewport;
+    ViewPort viewport;
     viewport.reset();
 
-    struct Button {
-        virtual ~Button() = default;
-        virtual bool status() = 0;
-        virtual bool pressed() = 0;
-    };
-
-    struct Key : Button {
-        bool keyDown = false;
-        bool keyStatus = false;
-        int keyCode;
-        bool keyPressed = false;
-        Key(int key)
-            : keyCode(key)
-        {
-            keyDown = 0x8000 & GetKeyState(keyCode);
-        }
-
-        void update()
-        {
-            int state = 0x8000 & GetKeyState(keyCode);
-            keyPressed = !keyDown && state;
-            keyDown = state;
-        }
-
-        bool status() override { return keyDown; }
-        bool pressed() override { return keyPressed; }
-    };
-
-    struct Controller {
-        Key left = Key(VK_LEFT);
-        Key right = Key(VK_RIGHT);
-        Key throttle = Key(VK_SPACE);
-        // Key down = Key(VK_DOWN);
-        Key zoomIn = Key(VK_UP);
-        Key zoomOut = Key(VK_DOWN);
-        // Key zoomIn = Key(0x5A);   // Z
-        // Key zoomOut = Key(0x58);  // X
-        Key pause = Key(0x50);  // P
-        Key reset = Key(0x52);  // R
-
-        Controller()
-        {
-            printf(
-                "Arrow Left - Rotate left\n"
-                "Arrow Right - Rotate Right\n"
-                "Space Bar - Thrust\n"
-                "P - Pause Game\n"
-                "Arrow Up - Zoom In\n"
-                "Arrow Down - Zoom Out\n"
-                "R - Reset Game\n");
-        };
-
-        void update()
-        {
-            left.update();
-            right.update();
-            throttle.update();
-            zoomIn.update();
-            zoomOut.update();
-            pause.update();
-            reset.update();
-        }
-
-    } controller;
-
-    struct Lander {
-        const Vector2Df A = {0, G};
-        Vector2Df velocity;
-        Vector2Df pos;
-        float angularSpeed;
-        float angle;  // in radians
-        float fuel;   // burntime in seconds
-
-        const float height = 5.f;
-        const float width = 5.f;
-
-        Lander() { reset(0, 0); }
-
-        // Parameters
-        const float thrust = 3 * G;
-#define DEGTORAD(d) ((float)M_PI / 180.f * (d))
-        const float angularAcc = DEGTORAD(40);  // d/s^2
-        const Vector2Df initialVelocity = {3, 0};
-        const float initialFuel = 60.f;
-        const float mass = 100.f;  // in fuel units
-
-        void update(float t, int& engine, int rotation)
-        {
-            // lander rotation
-            const float dampening = 0.80f;
-
-            float adelta = angularAcc * rotation * t * mass / (mass + fuel);
-            angle += (angularSpeed + adelta / 2.f) * t;
-            angularSpeed += adelta;
-            if (!rotation) angularSpeed -= angularSpeed * dampening * t;
-            if (angle > (float)M_PI) angle = -(2 * (float)M_PI - angle);
-            if (angle < (float)-M_PI) angle = (2 * (float)M_PI + angle);
-
-            // lander position
-            const float accScale = 1 / 2.f;
-
-            if (engine && fuel > 0) {
-                fuel -= t;
-                if (fuel < 0) {
-                    fuel = 0;
-                }
-            } else {
-                engine = 0;
-            }
-            Vector2Df tvec = Vector2Df(0, engine * -thrust * mass / (mass + fuel));
-            Vector2Df totalAcc = A + glm::rotate(tvec, angle);
-
-            Vector2Df vdelta = totalAcc * t * accScale;
-            pos += (velocity + vdelta / 2.f) * t;
-            velocity += vdelta;
-        }
-
-        void nextLevel(float posx, float posy, float fuelRefund)
-        {
-            float f = fuel;
-            reset(posx, posy);
-            const float minimumFuel = 5.f;
-            fuel = f + initialFuel * fuelRefund;
-            if (fuel < minimumFuel) fuel = minimumFuel;
-        }
-
-        void reset(float posx, float posy)
-        {
-            velocity = initialVelocity;
-            angularSpeed = 0;
-            angle = 0;
-            fuel = initialFuel;
-            pos = {posx, posy};
-        }
-
-    } lander;
-
+    Lander lander;
     lander.reset(viewport.pos.x, 50);
 
-    struct TextUtil {
-        using Character = std::vector<std::vector<AudioRender::Point>>;
+    Controller controller;
+    struct TextUtil textUtil(device);
 
-        const Character l_A = {{{0, 0}, {2.5f, -10}, {5.f, 0}}, {{2.5f / 2, -4}, {5.f - 2.5f / 2, -4}}};
-        const Character l_F = {{{0, 0}, {0, -10}, {4, -10}}, {{0, -5.f}, {3, -5.f}}};
-        const Character l_I = {{{0, 0}, {0, -10}}};
-        const Character l_K = {{{0, 0}, {0, -10}}, {{4, -10}, {0, -5}, {4, 0}}};
-        const Character l_L = {{{0, -10}, {0, 0}, {3.5f, 0}}};
-        const Character l_O = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};
-        const Character l_P = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}}};
-        const Character l_R = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
-        const Character l_W = {{{0, -10}, {6.f / 3, 0}, {6.f / 2, -6}, {6.f - 6.f / 3, 0}, {6, -10}}};
-        const Character l_N = {{{0, 0}, {0, -10}, {4, 0}, {4, -10}}};
-        const Character l_D = {{{0, 0}, {0, -10}, {4, -8}, {4, -2}, {0, 0}}};
-        const Character l__ = {{{0, 0}, {4, 0}}};
-
-        const Character d0 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}, {4, -10}}};
-        const Character d1 = {{{2, 0}, {2, -10}, {1, -9}}};
-        const Character d2 = {{{0, -10}, {4, -10}, {4, -5}, {0, -5}, {0, 0}, {4, 0}}};
-        const Character d3 = {{{0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{1, -5}, {4, -5}}};
-        const Character d4 = {{{4, 0}, {4, -10}, {0, -4}, {5, -4}}};
-        const Character d5 = {{{0, 0}, {4, 0}, {4, -5}, {0.5, -5}, {0.5, -10}, {4, -10}}};
-        const Character d6 = {{{0, -5}, {4, -5}, {4, 0}, {0, 0}, {0, -10}, {4, -10}}};
-        const Character d7 = {{{4, 0}, {4, -10}, {0, -10}}};
-        const Character d8 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{0, -5}, {4, -5}}};
-        const Character d9 = {{{3, 0}, {4, -10}, {0, -10}, {0, -6}, {4, -6}}};
-
-        const Character* digits[10] = {&d0, &d1, &d2, &d3, &d4, &d5, &d6, &d7, &d8, &d9};
-
-        const float letterScale = 1.f / 10 * 0.2f;
-        AudioRender::IDrawDevice* device;
-        const Character* letters[0xFF + 1];
-
-        TextUtil(AudioRender::IDrawDevice* drawDevice)
-            : device(drawDevice)
-        {
-            for (int i = 0; i <= 0xFF; i++) {
-                letters[i] = &l__;
-            }
-            letters['A'] = &l_A;
-            letters['F'] = &l_F;
-            letters['I'] = &l_I;
-            letters['K'] = &l_K;
-            letters['L'] = &l_L;
-            letters['O'] = &l_O;
-            letters['P'] = &l_P;
-            letters['R'] = &l_R;
-            letters['W'] = &l_W;
-            letters['N'] = &l_N;
-            letters['D'] = &l_D;
-            letters['0'] = &d0;
-            letters['1'] = &d1;
-            letters['2'] = &d2;
-            letters['3'] = &d3;
-            letters['4'] = &d4;
-            letters['5'] = &d5;
-            letters['6'] = &d6;
-            letters['7'] = &d7;
-            letters['8'] = &d8;
-            letters['9'] = &d9;
-        }
-
-        void drawCharacter(char c, float xpos, float ypos) { drawCharacter(letters[c], xpos, ypos); };
-
-        void drawDigit(int d, float xpos, float ypos) { drawCharacter(digits[d % 10], xpos, ypos); };
-
-        void writeText(const char* text, float xpos, float ypos)
-        {
-            static float widthCache[0xFF + 1] = {0};
-            const float spacing = 1.f;
-
-            while (char c = *text++) {
-                const Character* cr = letters[c];
-
-                float width = widthCache[c];
-                if (width == 0.0f) {
-                    float minx = std::numeric_limits<float>::max();
-                    float maxx = std::numeric_limits<float>::min();
-                    for (auto& seg : *cr) {
-                        for (auto& p : seg) {
-                            minx = std::min(minx, p.x);
-                            maxx = std::max(maxx, p.x);
-                        }
-                    }
-                    width = widthCache[c] = std::max(std::abs(maxx - minx), 1.f);
-                }
-                drawCharacter(cr, xpos, ypos);
-                xpos += width + spacing;
-            }
-        };
-
-    private:
-        void drawCharacter(const Character* lf, float xpos, float ypos)
-        {
-            const AudioRender::Point offset{xpos, ypos};
-            for (const auto& seg : *lf) {
-                device->SetPoint((seg[0] + offset) * letterScale);
-                for (size_t i = 1; i < seg.size(); i++) {
-                    device->DrawLine((seg[i] + offset) * letterScale);
-                }
-            }
-        };
-
-    } textUtil(device);
-
-    LunarLander::Map map;
+    Map map;
 
     auto generateLevel = [&](int level) { map = generateTerrain(level, viewport.width); };
 
-    // Restrics state change speed
-    Timer coolDownTimer(false, 2.0f);
+    Timer coolDownTimer(false, 2.0f);  // Restrics state change speed
     enum GameState { ST_WAIT, ST_PLAY, ST_WIN, ST_FAIL } gameState = ST_WAIT;
+    float totalTime = 0;
     bool paused = false;
     int level = 0;
     generateLevel(level);
@@ -346,6 +350,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         if (controller.pause.pressed()) {
             paused = !paused;
         }
+        totalTime += elapsed;
 
         /*
         {
@@ -389,14 +394,29 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             viewport.zoom -= 1.f;
         }
 
-        if (controller.reset.pressed()) {
-            // reset game state
+        auto resetGame = [&]() {
             level = 0;
             generateLevel(level);
             viewport.reset();
             lander.reset(viewport.pos.x, 50);
             gameState = ST_WAIT;
             coolDownTimer.reset();
+            totalTime = 0;
+        };
+
+        auto advanceLevel = [&](float fuelBonus) {
+            level++;
+            generateLevel(level);
+            viewport.reset();
+            lander.nextLevel(viewport.pos.x, 50, fuelBonus);
+            if (level & 1) lander.velocity.x *= -1;
+            gameState = ST_WAIT;
+            coolDownTimer.reset();
+        };
+
+        if (controller.reset.pressed()) {
+            // reset game state
+            resetGame();
         }
 
         if (gameState == ST_WAIT) {
@@ -420,14 +440,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             if (coolDownTimer.update(elapsed / 1000.f)) {
                 if (controller.throttle.pressed()) {
                     // advance to next level
-                    level++;
-                    generateLevel(level);
-                    viewport.reset();
-                    // give some extra fuel
-                    lander.nextLevel(viewport.pos.x, 50, 1 / 3.f);
-                    if (level & 1) lander.velocity.x *= -1;
-                    gameState = ST_WAIT;
-                    coolDownTimer.reset();
+                    advanceLevel(1 / 3.f);
                 }
             }
         } else if (gameState == ST_FAIL) {
@@ -438,21 +451,11 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 if (controller.throttle.pressed()) {
                     if (lander.fuel > 0) {
                         // advance to next level
-                        level++;
-                        generateLevel(level);
-                        viewport.reset();
-                        // fuel penalty
-                        lander.nextLevel(viewport.pos.x, 50, -1 / 4.f);
+                        advanceLevel(-1 / 4.f);
                     } else {
                         // Game over
-                        level = 0;
-                        generateLevel(level);
-                        viewport.reset();
-                        lander.reset(viewport.pos.x, 50);
+                        resetGame();
                     }
-                    if (level & 1) lander.velocity.x *= -1;
-                    gameState = ST_WAIT;
-                    coolDownTimer.reset();
                 }
             }
         }
@@ -552,7 +555,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         // lander position
         auto rotatedPoint = [&](float x, float y) -> AudioRender::Point {
-            auto v = glm::rotate(glm::vec2(x, y), lander.angle);
+            auto v = vrotate(Vector2Df(x, y), lander.angle);
             // v += offset;
             return {v.x, v.y};
         };
@@ -658,10 +661,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             device->SetPoint((points[0]) * windowScale);
             for (size_t i = 1; i < points.size(); i++) device->DrawLine(points[i] * windowScale);
 
-            // DEBUG line
-            // device->SetPoint({(-lander.width) / (float)windowWidth, 0.05f});
-            // device->DrawLine({(+lander.height) / (float)windowWidth, 0.05f});
-
             if (engineon) {
                 // draw engine exhaust
                 device->SetIntensity(0.4f);
@@ -697,13 +696,13 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 blinkTimer.update(elapsed / 1000.f);
 
                 if (p > lowFuelAlarmLevel || blinkTimer.flipflop) {  // blink if low fuel
-                    glm::vec2 needle(-0.5, 0);
+                    Vector2Df needle(-0.5, 0);
                     const int steps = 20;
-                    needle = glm::rotate(needle, DEGTORAD(45 * p));
+                    needle = vrotate(needle, DEGTORAD(45 * p));
                     const float angleStep = DEGTORAD(90.f / steps);
                     device->SetPoint({needle.x, -needle.y});
                     for (float r = 0; r <= p; r += 1.f / steps) {
-                        needle = glm::rotate(needle, -angleStep);
+                        needle = vrotate(needle, -angleStep);
                         device->DrawLine({needle.x, -needle.y});
                     }
                 }
