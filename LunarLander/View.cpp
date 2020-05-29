@@ -244,11 +244,11 @@ void RenderView::WinMainProc()
         }
 
         {
-            // Notify thread blocking in WaitSync that it can start submitting
+            // Notify application thread blocking in WaitSync that it can start submitting
             std::unique_lock<std::mutex> lock(m_mutex);
             m_frameSyncPoint.sync(lock);
 
-            // theoretically it's possible render thread notifies submit before this thread gets to wait
+            // theoretically it's possible application thread notifies submit before this thread gets to wait
             // but we don't care.
             m_frameSubmitCv.wait_for(lock, std::chrono::milliseconds(20));
         }

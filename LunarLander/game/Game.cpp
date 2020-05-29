@@ -220,6 +220,9 @@ struct Controller {
     Key pause = Key(0x50);  // P
     Key reset = Key(0x52);  // R
 
+    // DEBUG
+    Key nextLevel = Key(0x4E);  // 'N'
+
     Controller()
     {
         printf(
@@ -241,6 +244,7 @@ struct Controller {
         zoomOut.update();
         pause.update();
         reset.update();
+        nextLevel.update();
     }
 };
 
@@ -258,18 +262,18 @@ struct Lander {
     Lander() { reset(0, 0); }
 
     // Parameters
-    const float thrust = 3 * G;
-    const float angularAcc = DEGTORAD(40);  // d/s^2
-    const Vector2Df initialVelocity = {3, 0};
-    const float initialFuel = 60.f;
     const float mass = 100.f;  // in fuel units
+    const float thrust = 3 * G * (mass * 1.5f);
+    const float angularAcc = (mass * 1.5f) * DEGTORAD(40);  // d/s^2
+    const Vector2Df initialVelocity = {3, 0};
+    const float initialFuel = 100.f;
 
     void update(float t, int& engine, int rotation)
     {
         // lander rotation
         const float dampening = 0.80f;
 
-        float adelta = angularAcc * rotation * t * mass / (mass + fuel);
+        float adelta = angularAcc * rotation * t / (mass + fuel);
         angle += (angularSpeed + adelta / 2.f) * t;
         angularSpeed += adelta;
         if (!rotation) angularSpeed -= angularSpeed * dampening * t;
@@ -287,7 +291,7 @@ struct Lander {
         } else {
             engine = 0;
         }
-        Vector2Df tvec = Vector2Df(0, engine * -thrust * mass / (mass + fuel));
+        Vector2Df tvec = Vector2Df(0, engine * -thrust / (mass + fuel));
         Vector2Df totalAcc = A + vrotate(tvec, angle);
 
         Vector2Df vdelta = totalAcc * t * accScale;
@@ -320,9 +324,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     ViewPort viewport;
     viewport.reset();
 
-    Lander lander;
-    lander.reset(viewport.pos.x, 50);
-
     Controller controller;
     struct TextUtil textUtil(device);
 
@@ -336,6 +337,27 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     bool paused = false;
     int level = 0;
     generateLevel(level);
+
+    Lander lander;
+
+    auto updateLanderPosition = [&](Vector2Df& pos, float minheight) {
+        int xs = (int)std::floorf(pos.x - lander.width - 20);
+        const int xe = (int)std::ceilf(pos.x + lander.width + 20);
+        // ensure some free space between terrain and lander
+        for (; xs < xe; xs++) {
+            int y = map.terrain[xs];
+            if (y < pos.y + minheight) {
+                pos.y = y - minheight;
+            }
+        }
+
+        if (map.terrain[(int)pos.x] > pos.y + minheight * 10) {
+            pos.y = map.terrain[(int)pos.x] - minheight * 10;
+        }
+    };
+
+    lander.reset(viewport.pos.x, 50);
+    updateLanderPosition(lander.pos, 10);
 
     while (running) {
         using namespace std::chrono;
@@ -399,6 +421,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             generateLevel(level);
             viewport.reset();
             lander.reset(viewport.pos.x, 50);
+            updateLanderPosition(lander.pos, 10);
             gameState = ST_WAIT;
             coolDownTimer.reset();
             totalTime = 0;
@@ -408,7 +431,8 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             level++;
             generateLevel(level);
             viewport.reset();
-            lander.nextLevel(viewport.pos.x, 50, fuelBonus);
+            lander.nextLevel(viewport.pos.x + ((level & 1) ? 100 : -100), 50, fuelBonus);
+            updateLanderPosition(lander.pos, 10);
             if (level & 1) lander.velocity.x *= -1;
             gameState = ST_WAIT;
             coolDownTimer.reset();
@@ -417,6 +441,10 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         if (controller.reset.pressed()) {
             // reset game state
             resetGame();
+        }
+
+        if (controller.nextLevel.pressed()) {
+            advanceLevel(0.0f);
         }
 
         if (gameState == ST_WAIT) {
@@ -440,7 +468,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             if (coolDownTimer.update(elapsed / 1000.f)) {
                 if (controller.throttle.pressed()) {
                     // advance to next level
-                    advanceLevel(1 / 3.f);
+                    advanceLevel(1 / 4.f);
                 }
             }
         } else if (gameState == ST_FAIL) {
