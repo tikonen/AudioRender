@@ -26,7 +26,6 @@ RenderView::~RenderView()
     if (m_windowThread.joinable()) m_windowThread.join();
 }
 
-
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT WINAPI RenderView::PlotterWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -75,7 +74,7 @@ void RenderView::WinMainProc()
         UnregisterClass(wc.lpszClassName, wc.hInstance);
         m_running = false;
         printf("Failed to create D3D device. %s", GetLastErrorString());
-        m_frameCv.notify_one();
+        m_frameSyncCv.notify_one();
         return;
     }
     m_width = 400;
@@ -244,13 +243,19 @@ void RenderView::WinMainProc()
             ImGui::SetCursorScreenPos(pos);
         }
 
-        // Notify thread blocking in WaitSync that it can start submitting
-        // FIX: There is race condition that if thread is not in WaitSync it misses the notification.
-        m_frameCv.notify_one();
+        {
+            // Notify thread blocking in WaitSync that it can start submitting
+            std::unique_lock<std::mutex> lock(m_mutex);
+            if (m_waitSync) {
+                // application thread is already waiting, wake it up
+                m_frameSyncCv.notify_one();
+            } else {
+                // application thread is not yet there, waiting for it
+                m_frameSyncCv.wait(lock);
+            }
 
-        // Wait until submit done.
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_frameCv.wait_for(lock, std::chrono::milliseconds(20));
+            m_frameSubmitCv.wait_for(lock, std::chrono::milliseconds(20));
+        }
 
         ImGui::End();
 
@@ -285,15 +290,56 @@ void RenderView::WinMainProc()
     UnregisterClass(wc.lpszClassName, wc.hInstance);
     m_running = false;
 
-    m_frameCv.notify_all();
+    m_frameSyncCv.notify_all();
 }
+
+struct SyncPoint {
+    std::mutex& mutex;
+    std::condition_variable cv;
+    bool waitSync = false;
+    bool closed = false;
+
+    SyncPoint(std::mutex& _mutex)
+        : mutex(_mutex)
+    {
+    }
+
+    void sync()
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        if (waitSync) {
+            // rendering thread is already waiting, wake it up
+            waitSync = false;
+            cv.notify_one();
+        } else if (!closed) {
+            // rendering thread was not there yet, wait for it
+            waitSync = true;
+            cv.wait(lock);
+            waitSync = false;
+        }
+    }
+
+    void close()
+    {
+        closed = true;
+        cv.notify_all();
+    }
+};
 
 bool RenderView::WaitSync()
 {
-    if (m_running) {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_frameCv.wait(lock);
+    std::unique_lock<std::mutex> lock(m_mutex);
+    if (m_waitSync) {
+        // rendering thread is already waiting, wake it up
+        m_waitSync = false;
+        m_frameSyncCv.notify_one();
+    } else if (m_running) {
+        // rendering thread was not there yet, wait for it
+        m_waitSync = true;
+        m_frameSyncCv.wait(lock);
+        m_waitSync = false;
     }
+
     // window may have closed while waiting
     return m_running;
 }
@@ -353,7 +399,7 @@ void RenderView::Submit()
         }
     }
 
-    m_frameCv.notify_one();
+    m_frameSubmitCv.notify_one();
 }
 
 bool RenderView::start()

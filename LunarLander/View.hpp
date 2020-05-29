@@ -54,7 +54,9 @@ private:
     int m_drawYOffset = -14;
     bool m_flicker = false;
     bool m_idleBeam = true;
-    std::condition_variable m_frameCv;
+    std::condition_variable m_frameSyncCv;
+    std::condition_variable m_frameSubmitCv;
+    bool m_waitSync = false;
     std::mutex m_mutex;
 
     void createRenderTarget();
