@@ -74,7 +74,7 @@ void RenderView::WinMainProc()
         UnregisterClass(wc.lpszClassName, wc.hInstance);
         m_running = false;
         printf("Failed to create D3D device. %s", GetLastErrorString());
-        m_frameSyncCv.notify_one();
+        m_frameSyncPoint.close();
         return;
     }
     m_width = 400;
@@ -246,14 +246,10 @@ void RenderView::WinMainProc()
         {
             // Notify thread blocking in WaitSync that it can start submitting
             std::unique_lock<std::mutex> lock(m_mutex);
-            if (m_waitSync) {
-                // application thread is already waiting, wake it up
-                m_frameSyncCv.notify_one();
-            } else {
-                // application thread is not yet there, waiting for it
-                m_frameSyncCv.wait(lock);
-            }
+            m_frameSyncPoint.sync(lock);
 
+            // theoretically it's possible render thread notifies submit before this thread gets to wait
+            // but we don't care.
             m_frameSubmitCv.wait_for(lock, std::chrono::milliseconds(20));
         }
 
@@ -290,55 +286,13 @@ void RenderView::WinMainProc()
     UnregisterClass(wc.lpszClassName, wc.hInstance);
     m_running = false;
 
-    m_frameSyncCv.notify_all();
+    m_frameSyncPoint.close();
 }
-
-struct SyncPoint {
-    std::mutex& mutex;
-    std::condition_variable cv;
-    bool waitSync = false;
-    bool closed = false;
-
-    SyncPoint(std::mutex& _mutex)
-        : mutex(_mutex)
-    {
-    }
-
-    void sync()
-    {
-        std::unique_lock<std::mutex> lock(mutex);
-        if (waitSync) {
-            // rendering thread is already waiting, wake it up
-            waitSync = false;
-            cv.notify_one();
-        } else if (!closed) {
-            // rendering thread was not there yet, wait for it
-            waitSync = true;
-            cv.wait(lock);
-            waitSync = false;
-        }
-    }
-
-    void close()
-    {
-        closed = true;
-        cv.notify_all();
-    }
-};
 
 bool RenderView::WaitSync()
 {
     std::unique_lock<std::mutex> lock(m_mutex);
-    if (m_waitSync) {
-        // rendering thread is already waiting, wake it up
-        m_waitSync = false;
-        m_frameSyncCv.notify_one();
-    } else if (m_running) {
-        // rendering thread was not there yet, wait for it
-        m_waitSync = true;
-        m_frameSyncCv.wait(lock);
-        m_waitSync = false;
-    }
+    m_frameSyncPoint.sync(lock);
 
     // window may have closed while waiting
     return m_running;

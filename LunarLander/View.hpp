@@ -19,6 +19,36 @@
 
 #include "DrawDevice.hpp"
 
+// Synchronizes two threads at the same point
+class SyncPoint
+{
+public:
+    void sync(std::unique_lock<std::mutex>& lock)
+    {
+        if (waitSync) {
+            // another thread is already waiting, wake it up
+            waitSync = false;
+            cv.notify_one();
+        } else if (!closed) {
+            // another thread was not there yet, wait for it
+            waitSync = true;
+            cv.wait(lock);
+            waitSync = false;
+        }
+    }
+
+    void close()
+    {
+        closed = true;
+        cv.notify_all();
+    }
+
+private:
+    std::condition_variable cv;
+    bool waitSync = false;
+    bool closed = false;
+};
+
 class RenderView : public AudioRender::DrawDevice
 {
 public:
@@ -54,9 +84,8 @@ private:
     int m_drawYOffset = -14;
     bool m_flicker = false;
     bool m_idleBeam = true;
-    std::condition_variable m_frameSyncCv;
+    ::SyncPoint m_frameSyncPoint;
     std::condition_variable m_frameSubmitCv;
-    bool m_waitSync = false;
     std::mutex m_mutex;
 
     void createRenderTarget();
