@@ -22,10 +22,11 @@
 
 namespace LunarLander
 {
+// Generic timer utility
 struct Timer {
     const float interval;
     float cumulative = 0;
-    int flipflop = 1;
+    int flipflop = 1;  // toggles state on every timer expiry
     const bool autoReset;
 
     Timer(bool autoRes, float t)
@@ -57,7 +58,10 @@ struct Timer {
 
 struct Button {
     virtual ~Button() = default;
+    // Button down status
     virtual bool status() = 0;
+
+    // Button changed state to down on the last frame
     virtual bool pressed() = 0;
 };
 
@@ -83,6 +87,7 @@ struct Key : Button {
     bool pressed() override { return keyPressed; }
 };
 
+// Utility to write text on the view
 struct TextUtil {
     using Character = std::vector<std::vector<AudioRender::Point>>;
 
@@ -187,10 +192,11 @@ private:
     };
 };
 
+// Vector implementation
 using Vector2D = glm::ivec2;
 using Vector2Df = glm::vec2;
 
-static inline Vector2Df vrotate(const Vector2Df v, float rads) { return glm::rotate(std::move(v), rads); }
+static inline Vector2Df vrotate(const Vector2Df& v, float rads) { return glm::rotate(v, rads); }
 
 struct ViewPort {
     int width;
@@ -268,15 +274,19 @@ struct Lander {
     const Vector2Df initialVelocity = {3, 0};
     const float initialFuel = 100.f;
 
-    void update(float t, int& engine, int rotation)
+    void update(float dt, int& engine, int rotation)
     {
         // lander rotation
-        const float dampening = 0.80f;
+        const float rotationDampening = 0.80f;
 
-        float adelta = angularAcc * rotation * t / (mass + fuel);
-        angle += (angularSpeed + adelta / 2.f) * t;
+        float adelta = angularAcc * rotation * dt / (mass + fuel);
+        // Integrate rotation
+        angle += (angularSpeed + adelta / 2.f) * dt;
         angularSpeed += adelta;
-        if (!rotation) angularSpeed -= angularSpeed * dampening * t;
+
+        // dampen the angular speed
+        if (!rotation) angularSpeed -= angularSpeed * rotationDampening * dt;
+
         if (angle > (float)M_PI) angle = -(2 * (float)M_PI - angle);
         if (angle < (float)-M_PI) angle = (2 * (float)M_PI + angle);
 
@@ -284,7 +294,7 @@ struct Lander {
         const float accScale = 1 / 2.f;
 
         if (engine && fuel > 0) {
-            fuel -= t;
+            fuel -= dt;
             if (fuel < 0) {
                 fuel = 0;
             }
@@ -293,9 +303,9 @@ struct Lander {
         }
         Vector2Df tvec = Vector2Df(0, engine * -thrust / (mass + fuel));
         Vector2Df totalAcc = A + vrotate(tvec, angle);
-
-        Vector2Df vdelta = totalAcc * t * accScale;
-        pos += (velocity + vdelta / 2.f) * t;
+        // Integrate position
+        Vector2Df vdelta = totalAcc * dt * accScale;
+        pos += (velocity + vdelta / 2.f) * dt;
         velocity += vdelta;
     }
 
@@ -609,18 +619,13 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         if (gameState == ST_PLAY || gameState == ST_WAIT) {
             // Check for collisions
 
-            // y coordinate border checks
-            if (lander.pos.y < -50) {
-                lander.pos.y = -50;
-                gameState = ST_FAIL;
-            }
-            if (lander.pos.y > viewport.height) {
-                lander.pos.y = (float)viewport.height;
+            // Game area border checks
+            if (lander.pos.y < -50 || (lander.pos.y >= viewport.height) || lander.pos.x < 0 || lander.pos.x >= viewport.width) {
                 gameState = ST_FAIL;
             }
 
             bool collided = false;
-            // Check intersection for each lander line segment with terrain segments
+            // Check intersection for each lander line segment with nearby terrain segments
             for (size_t k = 0; k < points.size(); k++) {
                 float lp1x = points[k].x + lander.pos.x;
                 float lp1y = points[k].y + lander.pos.y;
@@ -645,6 +650,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             if (collided) {
                 // Lander has collided with ground, determine if this was an acceptable landing
 
+                // Requirements for landing
                 const int maxLandingAngle = 5;             // degrees
                 const float maxHorisontalVelocity = 0.8f;  // m/s
                 const float maxVerticalVelocity = 1.2f;    // m/s
