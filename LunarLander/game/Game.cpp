@@ -17,7 +17,7 @@
 #include "Game.hpp"
 #include "Terrain.hpp"
 
-#define G 1.625f  // ms^2
+#define G 1.625f  // m/s^2
 #define DEGTORAD(d) ((float)M_PI / 180.f * (d))
 
 namespace LunarLander
@@ -47,6 +47,7 @@ struct Timer {
         cumulative += elapseds;
         if (cumulative >= interval) {
             if (autoReset) {
+                cumulative -= interval;
                 cumulative = 0;
                 flipflop = 1 - flipflop;
             }
@@ -417,7 +418,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
         // clear frame
         device->Begin();
-        device->SetIntensity(0.2f);
+        device->SetIntensity(0.5f);
 
         if (controller.zoomIn.pressed()) {
             viewport.zoom += 1.f;
@@ -589,7 +590,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             engineon = false;
         }
 
-        device->SetIntensity(0.4f);
+        device->SetIntensity(1.0f);
 
         // lander position
         auto rotatedPoint = [&](float x, float y) -> AudioRender::Point {

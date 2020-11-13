@@ -44,6 +44,7 @@ int main(int argc, char* argv[])
             audio = true;
         } else if (!_stricmp(arg, "/T")) {
             testTone = true;
+            /*
         } else if (!_stricmp(arg, "/D")) {
             if (argc >= 1) {
                 demoMode = atoi(*argv);
@@ -51,6 +52,7 @@ int main(int argc, char* argv[])
                 argc--;
             } else
                 DisplayUsage();
+                */
         } else {
             DisplayUsage();
         }
@@ -93,7 +95,8 @@ int main(int argc, char* argv[])
         } else {
             auto audioGenerator = std::make_shared<AudioRender::AudioGraphicsBuilder>();
             // Give some margin and flip Y axis
-            audioGenerator->setScale(0.95f, -0.95f);
+            // audioGenerator->setScale(-0.95f, -0.95f);
+            audioGenerator->setScale(-2.f, -2.f);
             audioDevice.SetGenerator(audioGenerator);
             audioDevice.Start();
 
@@ -115,17 +118,6 @@ void mainLoop(int demoMode, AudioRender::IDrawDevice* device)
 {
     LunarLander::Game game;
     game.mainLoop(g_running, device);
-    /*
-    if (demoMode == 1) {
-        basicRender(device);
-    } else if (demoMode == 2) {
-        rasterRender(device);
-    } else if (demoMode == 3) {
-        svgRender(device);
-    } else {
-        LOGE("Invalid demomode %d\n", demoMode);
-    }
-    */
 }
 
 BOOL WINAPI ctrlHandler(DWORD dwCtrlType)
@@ -147,7 +139,7 @@ void DisplayUsage()
         "/S\tVisual simulation.\n"
         "/A\tAudio render.\n"
         "/T\tTest tone.\n"
-        "/D <mode>\tSpecify demo mode: 1 - Basic, 2 - Raster Image or 3 - SVG Graphics.\n"
+        //"/D <mode>\tSpecify demo mode: 1 - Basic, 2 - Raster Image or 3 - SVG Graphics.\n"
         "/?\tPrint this message.\n"
         "\n";
     printf(msg);
