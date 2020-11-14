@@ -149,11 +149,11 @@ void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops
     if (ctx.bufferIdx < m_minBufferCount) {
         m_audioBuffers.resize(m_minBufferCount);
     }
-    for (size_t i = ctx.bufferIdx; i < m_audioBuffers.size(); i++) {
+    auto& buf = m_audioBuffers[ctx.bufferIdx];
+    memset(buf.data() + ctx.idx, 0, buf.size() - ctx.idx);
+    for (size_t i = ctx.bufferIdx + 1; i < m_audioBuffers.size(); i++) {
         auto& buf = m_audioBuffers[i];
-        if (ctx.idx < buf.size()) {
-            memset(buf.data() + ctx.idx, 0, buf.size() - ctx.idx);
-        }
+        memset(buf.data(), 0, buf.size());
     }
     m_rendering = true;
     // TODO compare points to pointCount

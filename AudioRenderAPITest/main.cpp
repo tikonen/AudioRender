@@ -196,7 +196,7 @@ void svgRender(AudioRender::IDrawDevice* device)
             device->Begin();
             device->SetIntensity(0.5f);
             if (vectorizer) {
-                vectorizer->drawImage(device, 1.0f);
+                vectorizer->drawImage(device, 1.8f);
             }
         }
 
