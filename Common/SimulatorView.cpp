@@ -1,7 +1,7 @@
 #define NOMINMAX
 #include <Windows.h>
 
-#include "View.hpp"
+#include "SimulatorView.hpp"
 
 #include <Log.hpp>
 
@@ -11,7 +11,7 @@
 #include "imgui_platform\imgui_impl_dx10.h"
 
 
-RenderView::RenderView(std::atomic_bool& running)
+SimulatorRenderView::SimulatorRenderView(std::atomic_bool& running)
     : m_running(running)
     , m_flicker(false)
     , m_idleBeam(false)
@@ -19,21 +19,20 @@ RenderView::RenderView(std::atomic_bool& running)
     loadSettings();
 }
 
-RenderView::~RenderView()
+SimulatorRenderView::~SimulatorRenderView()
 {
     saveSettings();
     if (m_imageData) stbi_image_free(m_imageData);
     if (m_windowThread.joinable()) m_windowThread.join();
 }
 
-
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-LRESULT WINAPI RenderView::PlotterWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT WINAPI SimulatorRenderView::PlotterWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    RenderView* pThis = NULL;
+    SimulatorRenderView* pThis = NULL;
     if (msg == WM_CREATE) {
         // special case, store the context
-        pThis = static_cast<RenderView*>(reinterpret_cast<CREATESTRUCT*>(lParam)->lpCreateParams);
+        pThis = static_cast<SimulatorRenderView*>(reinterpret_cast<CREATESTRUCT*>(lParam)->lpCreateParams);
         SetWindowLongPtr(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pThis));
     } else {
         if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) return true;
@@ -41,7 +40,7 @@ LRESULT WINAPI RenderView::PlotterWndProc(HWND hWnd, UINT msg, WPARAM wParam, LP
 
     switch (msg) {
         case WM_SIZE:
-            pThis = reinterpret_cast<RenderView*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+            pThis = reinterpret_cast<SimulatorRenderView*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
             if (pThis->m_pd3dDevice != NULL && wParam != SIZE_MINIMIZED) {
                 pThis->cleanupRenderTarget();
                 pThis->m_pSwapChain->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, 0);
@@ -57,7 +56,7 @@ LRESULT WINAPI RenderView::PlotterWndProc(HWND hWnd, UINT msg, WPARAM wParam, LP
     return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
-void RenderView::WinMainProc()
+void SimulatorRenderView::WinMainProc()
 {
     const int c_windowWidth = 800;
     const int c_windowHeight = 1000;
@@ -65,7 +64,7 @@ void RenderView::WinMainProc()
     std::wstring title = L"Oscilloscope";
 
     // Create application window
-    WNDCLASSEX wc = {sizeof(WNDCLASSEX), CS_CLASSDC, PlotterWndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("RenderView"), NULL};
+    WNDCLASSEX wc = {sizeof(WNDCLASSEX), CS_CLASSDC, PlotterWndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("SimulatorRenderView"), NULL};
     RegisterClassEx(&wc);
     HWND hWnd = CreateWindow(wc.lpszClassName, title.c_str(), WS_OVERLAPPEDWINDOW, 100, 100, c_windowWidth, c_windowHeight, NULL, NULL, wc.hInstance, this);
 
@@ -75,7 +74,7 @@ void RenderView::WinMainProc()
         UnregisterClass(wc.lpszClassName, wc.hInstance);
         m_running = false;
         printf("Failed to create D3D device. %s", GetLastErrorString());
-        m_frameCv.notify_one();
+        m_frameSyncPoint.close();
         return;
     }
     m_width = 400;
@@ -229,7 +228,7 @@ void RenderView::WinMainProc()
         ImGui::SetNextWindowSizeConstraints(
             {100, 100}, {1024, 1024},
             [](ImGuiSizeCallbackData* data) {
-                RenderView* pThis = (RenderView*)data->UserData;
+                SimulatorRenderView* pThis = (SimulatorRenderView*)data->UserData;
                 auto region = ImGui::GetContentRegionAvail();
                 float aspect = pThis->m_width / float(pThis->m_height + 30);
                 data->DesiredSize.y = data->DesiredSize.x / aspect;
@@ -244,12 +243,15 @@ void RenderView::WinMainProc()
             ImGui::SetCursorScreenPos(pos);
         }
 
-        // Notify thread blocking in WaitSync that it can start submitting
-        m_frameCv.notify_one();
+        {
+            // Notify application thread blocking in WaitSync that it can start submitting
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_frameSyncPoint.sync(lock);
 
-        // Wait until submit done.
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_frameCv.wait_for(lock, std::chrono::milliseconds(20));
+            // theoretically it's possible application thread notifies submit before this thread gets to wait
+            // but we don't care.
+            m_frameSubmitCv.wait_for(lock, std::chrono::milliseconds(20));
+        }
 
         ImGui::End();
 
@@ -284,20 +286,19 @@ void RenderView::WinMainProc()
     UnregisterClass(wc.lpszClassName, wc.hInstance);
     m_running = false;
 
-    m_frameCv.notify_all();
+    m_frameSyncPoint.close();
 }
 
-bool RenderView::WaitSync()
+bool SimulatorRenderView::WaitSync()
 {
-    if (m_running) {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_frameCv.wait(lock);
-    }
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_frameSyncPoint.sync(lock);
+
     // window may have closed while waiting
     return m_running;
 }
 
-void RenderView::Submit()
+void SimulatorRenderView::Submit()
 {
     if (!m_running) return;
 
@@ -351,17 +352,18 @@ void RenderView::Submit()
             drawList->AddCircle(p2p({0, 0}), 0.2f, color, 10, size);
         }
     }
-    m_frameCv.notify_one();
+
+    m_frameSubmitCv.notify_one();
 }
 
-bool RenderView::start()
+bool SimulatorRenderView::start()
 {
-    m_windowThread = std::thread(&RenderView::WinMainProc, this);
+    m_windowThread = std::thread(&SimulatorRenderView::WinMainProc, this);
 
     return true;
 }
 
-bool RenderView::loadBackground(const char* image)
+bool SimulatorRenderView::loadBackground(const char* image)
 {
     FILE* f;
     if (fopen_s(&f, image, "rb") == 0) {
@@ -376,7 +378,7 @@ bool RenderView::loadBackground(const char* image)
 static const char* s_iniFile = ".\\view.ini";
 static const char* s_posSection = "position";
 
-void RenderView::loadSettings()
+void SimulatorRenderView::loadSettings()
 {
     // Using Windows 3.1 16-bit API from early 90's
     m_drawWidth = GetPrivateProfileIntA(s_posSection, "width", 274, s_iniFile);
@@ -387,7 +389,7 @@ void RenderView::loadSettings()
     m_idleBeam = GetPrivateProfileIntA(s_posSection, "idlebeam", 0, s_iniFile);
 }
 
-void RenderView::saveSettings()
+void SimulatorRenderView::saveSettings()
 {
     char buffer[32];
     auto _itos = [&](int x) {
@@ -403,50 +405,23 @@ void RenderView::saveSettings()
     WritePrivateProfileStringA(s_posSection, "idlebeam", _itos(m_idleBeam), s_iniFile);
 }
 
-/*
-void RenderView::onFrame(const RGBFrameData& frame)
-{
-    if (frame.bits != 24) {
-        return;
-    }
-    HRESULT hr;
-    D3D10_MAPPED_TEXTURE2D mapped;
-    if (FAILED(hr = m_texture->Map(0, D3D10_MAP_WRITE_DISCARD, 0, &mapped))) {
-        printf("Texture map failed. %s", HResultToCString(hr));
-        return;
-    }
-    RGBTRIPLE* src = frame.pData.pRGB24;
-    RGBQUAD* dst = (RGBQUAD*)mapped.pData;
-    int height = min(m_height, frame.height);
-    int width = min(m_width, frame.width);
-    for (int y = 0; y < frame.height; y++) {
-        for (int x = 0; x < frame.width; x++) {
-            RGBTRIPLE p = src[x + y * frame.width];
-            dst[x] = {p.rgbtBlue, p.rgbtGreen, p.rgbtRed, 0xFF};
-        }
-        dst = (RGBQUAD*)((unsigned char*)mapped.pData + y * mapped.RowPitch);
-    }
-    m_texture->Unmap(0);
-}
-*/
-
-void RenderView::createRenderTarget()
+void SimulatorRenderView::createRenderTarget()
 {
     SmartPtr<ID3D10Texture2D> pBackBuffer;
     m_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
     m_pd3dDevice->CreateRenderTargetView(pBackBuffer, NULL, &m_mainRenderTargetView);
 }
 
-void RenderView::cleanupRenderTarget() { m_mainRenderTargetView = NULL; }
+void SimulatorRenderView::cleanupRenderTarget() { m_mainRenderTargetView = NULL; }
 
-void RenderView::cleanupDeviceD3D()
+void SimulatorRenderView::cleanupDeviceD3D()
 {
     cleanupRenderTarget();
     m_pSwapChain = NULL;
     m_pd3dDevice = NULL;
 }
 
-HRESULT RenderView::createDeviceD3D(HWND hWnd)
+HRESULT SimulatorRenderView::createDeviceD3D(HWND hWnd)
 {
     // Setup swap chain
     DXGI_SWAP_CHAIN_DESC sd;

@@ -10,7 +10,7 @@
 #include "game/Game.hpp"
 
 #include "ToneSampleGenerator.hpp"
-#include "View.hpp"
+#include "SimulatorView.hpp"
 
 
 void DisplayUsage();
@@ -60,8 +60,8 @@ int main(int argc, char* argv[])
 
     if (simulation) {
         // Use simple window rendering
-        std::shared_ptr<RenderView> renderView;
-        renderView = std::make_shared<RenderView>(g_running);
+        std::shared_ptr<SimulatorRenderView> renderView;
+        renderView = std::make_shared<SimulatorRenderView>(g_running);
 
         const char* background = "scope.jpg";
         if (!renderView->loadBackground(background)) {

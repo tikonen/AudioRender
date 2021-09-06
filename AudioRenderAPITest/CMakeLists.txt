@@ -3,19 +3,27 @@ project(AudioRenderAPITest)
 
 set(_target AudioRenderAPITest)
 
-include(../cmake/vs_precompiled.cmake)
-
 file(GLOB_RECURSE _source_files
   "${CMAKE_CURRENT_SOURCE_DIR}/*.[c|h]pp"
   "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
 )
 
-add_executable(${_target} ${_source_files})
+set(_common_dir "${CMAKE_SOURCE_DIR}/Common")
+
+file(GLOB_RECURSE _common_files
+	"${_common_dir}/*.[c|h]pp"
+)
+source_group("Application" FILES ${_source_files})
+source_group("Common" FILES ${_common_files})
+
+add_executable(${_target} ${_source_files} ${_common_files})
 target_compile_definitions(${_target} PRIVATE -D_UNICODE -DUNICODE)
 
 # required for winrt. Also /EHsc flag must be set to enable exceptions
 set_target_properties(${_target} PROPERTIES
         CXX_STANDARD 17)
+
+target_include_directories(${_target} PRIVATE ${_common_dir})
 
 target_link_libraries(${_target} AudioRenderAPI)
 

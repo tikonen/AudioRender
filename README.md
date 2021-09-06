@@ -1,5 +1,5 @@
 # AudioRender
-Audio Render API for Oscilloscope X/Y mode
+Audio Render API for Oscilloscope X/Y mode. Audio output left and right channels from Soundcard can be connected directly to oscilloscopes X and Y channels. Simulator mode is available for development use.
 
 Requires Visual Studio 2017 or later.
 
