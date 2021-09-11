@@ -1,7 +1,13 @@
 #pragma once
 
-#include "DeviceState.hpp"
+#include <atomic>
+#include <mutex>
 
+#include "DeviceState.hpp"
+#include "IAudioGenerator.hpp"
+
+namespace AudioRender
+{
 class AudioDevice
 {
 private:
@@ -24,3 +30,5 @@ public:
     bool Start();
     void Stop();
 };
+
+}  // namespace AudioRender

@@ -25,4 +25,5 @@ add_subdirectory(vendor)
 
 add_subdirectory(AudioRenderAPI)
 add_subdirectory(AudioRenderAPITest)
+add_subdirectory(AudioRenderCAPI)
 add_subdirectory(LunarLander)

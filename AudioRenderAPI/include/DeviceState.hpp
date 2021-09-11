@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Windows.h>
+#include <functional>
+
 enum class DeviceState {
     DeviceStateUnInitialized,
     DeviceStateInError,
