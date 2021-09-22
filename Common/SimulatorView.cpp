@@ -23,6 +23,8 @@ SimulatorRenderView::~SimulatorRenderView()
 {
     saveSettings();
     if (m_imageData) stbi_image_free(m_imageData);
+    m_running = false;
+    m_frameSyncPoint.close();
     if (m_windowThread.joinable()) m_windowThread.join();
 }
 
@@ -171,7 +173,7 @@ void SimulatorRenderView::WinMainProc()
     // Main loop
     MSG msg;
     ZeroMemory(&msg, sizeof(msg));
-    while (msg.message != WM_QUIT) {
+    while (msg.message != WM_QUIT && m_running) {
         // Poll and handle messages (inputs, window resize, etc.)
         // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
         // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application.

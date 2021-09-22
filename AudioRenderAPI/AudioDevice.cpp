@@ -10,6 +10,8 @@
 #include "IAudioGenerator.hpp"
 #include "Audiodevice.hpp"
 
+namespace AudioRender
+{
 // Wrapper hides the messy winrt dependencies from the class header
 struct AudioDevice::DeviceWrapper {
     ComPtr<WASAPIRenderer> m_renderer;
@@ -109,3 +111,5 @@ void AudioDevice::Stop()
 
     MFShutdown();
 }
+
+}  // namespace AudioRender

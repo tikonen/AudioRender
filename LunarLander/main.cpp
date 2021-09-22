@@ -74,7 +74,7 @@ int main(int argc, char* argv[])
         AudioRender::IDrawDevice* device = renderView.get();
         mainLoop(demoMode, device);
     } else if (audio) {
-        AudioDevice audioDevice;
+        AudioRender::AudioDevice audioDevice;
         audioDevice.Initialize();
 
         if (testTone) {
