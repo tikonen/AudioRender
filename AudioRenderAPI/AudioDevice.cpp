@@ -36,7 +36,7 @@ bool AudioDevice::WaitForDeviceState(int seconds, DeviceState state)
 
 bool AudioDevice::Initialize()
 {
-    winrt::init_apartment();
+    winrt::init_apartment(winrt::apartment_type::single_threaded);
     // CoInitialize(NULL);
     HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
 
@@ -51,7 +51,13 @@ bool AudioDevice::Initialize()
         const winrt::hstring propName = winrt::to_hstring("System.Devices.AudioDevice.RawProcessingSupported");
         props.push_back(propName);
         winrt::Windows::Foundation::IAsyncOperation op = winrt::Windows::Devices::Enumeration::DeviceInformation::CreateFromIdAsync(id, std::move(props));
-        auto deviceInfo = op.get();
+
+        HANDLE event = CreateEvent(nullptr, true, false, nullptr);
+        op.Completed([event](auto&& async, winrt::Windows::Foundation::AsyncStatus status) { SetEvent(event); });
+        WaitForSingleObject(event, INFINITE);
+        CloseHandle(event);
+
+        auto deviceInfo = op.GetResults();
         LOG("Device: %S", deviceInfo.Name().c_str());
         auto obj = deviceInfo.Properties().Lookup(propName);
 
