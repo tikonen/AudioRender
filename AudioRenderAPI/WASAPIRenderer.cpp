@@ -52,8 +52,6 @@ HRESULT WASAPIRenderer::InitializeAudioDeviceAsync()
     SmartPtr<IActivateAudioInterfaceAsyncOperation> asyncOp;
     HRESULT hr = S_OK;
 
-    // Get a string representing the Default Audio Device Renderer
-    m_DeviceIdString = MediaDevice::GetDefaultAudioRenderId(winrt::Windows::Media::Devices::AudioDeviceRole::Default);
     // This call must be made on the main UI thread.  Async operation will call back to
     // IActivateAudioInterfaceCompletionHandler::ActivateCompleted, which must be an agile interface implementation
     hr = ActivateAudioInterfaceAsync(m_DeviceIdString.data(), __uuidof(IAudioClient3), nullptr, this, &asyncOp);
@@ -153,6 +151,12 @@ exit:
     }
 
     // Need to return S_OK
+    return S_OK;
+}
+
+HRESULT WASAPIRenderer::SetDeviceId(winrt::hstring deviceId)
+{
+    m_DeviceIdString = deviceId;
     return S_OK;
 }
 

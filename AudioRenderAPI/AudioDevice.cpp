@@ -34,6 +34,16 @@ bool AudioDevice::WaitForDeviceState(int seconds, DeviceState state)
     return m_deviceState == state;
 };
 
+template <class T>
+void WaitSyncOp(T&& op)
+{
+    HANDLE event = CreateEvent(nullptr, true, false, nullptr);
+    op.Completed([event](auto&& async, winrt::Windows::Foundation::AsyncStatus status) { SetEvent(event); });
+    WaitForSingleObject(event, INFINITE);
+    CloseHandle(event);
+}
+
+
 bool AudioDevice::Initialize()
 {
     winrt::init_apartment(winrt::apartment_type::single_threaded);
@@ -44,23 +54,41 @@ bool AudioDevice::Initialize()
         LOGE("MediaFoundation startup failed. %s.", HResultToString(hr));
     }
 
+    // List all audio devices and attempt to use DAC Driver device if it's available. If not, use default communications audio device and
+    // failing that the default audio device.
+    winrt::hstring id = MediaDevice::GetDefaultAudioRenderId(winrt::Windows::Media::Devices::AudioDeviceRole::Communications);
+    if (id.empty()) {
+        id = MediaDevice::GetDefaultAudioRenderId(winrt::Windows::Media::Devices::AudioDeviceRole::Default);
+    }
     bool rawSupported = false;
-    winrt::hstring id = winrt::Windows::Media::Devices::MediaDevice::GetDefaultAudioRenderId(winrt::Windows::Media::Devices::AudioDeviceRole::Default);
     {
+        // Prefer DAC device if it's found
+        const winrt::hstring dacDeviceName = winrt::to_hstring("DAC Device");
+
+        auto op = winrt::Windows::Devices::Enumeration::DeviceInformation::FindAllAsync(winrt::Windows::Devices::Enumeration::DeviceClass::AudioRender);
+        WaitSyncOp(op);
+        auto devices = op.GetResults();
+
+        for (auto& deviceInfo : devices) {
+            auto name = deviceInfo.Name();
+            LOG("Device: %S", name.c_str());
+            auto it = std::search(name.begin(), name.end(), dacDeviceName.begin(), dacDeviceName.end());
+            if (it != name.end()) {
+                id = deviceInfo.Id();
+            }
+        }
+
         std::vector<winrt::hstring> props;
         const winrt::hstring propName = winrt::to_hstring("System.Devices.AudioDevice.RawProcessingSupported");
         props.push_back(propName);
-        winrt::Windows::Foundation::IAsyncOperation op = winrt::Windows::Devices::Enumeration::DeviceInformation::CreateFromIdAsync(id, std::move(props));
+        winrt::Windows::Foundation::IAsyncOperation opInfo = winrt::Windows::Devices::Enumeration::DeviceInformation::CreateFromIdAsync(id, std::move(props));
 
-        HANDLE event = CreateEvent(nullptr, true, false, nullptr);
-        op.Completed([event](auto&& async, winrt::Windows::Foundation::AsyncStatus status) { SetEvent(event); });
-        WaitForSingleObject(event, INFINITE);
-        CloseHandle(event);
+        WaitSyncOp(opInfo);
 
-        auto deviceInfo = op.GetResults();
-        LOG("Device: %S", deviceInfo.Name().c_str());
+        auto deviceInfo = opInfo.GetResults();
         auto obj = deviceInfo.Properties().Lookup(propName);
 
+        LOG("Using Device: %S", deviceInfo.Name().c_str());
         if (obj) {
             rawSupported = true;
             LOG("Raw audio supported");
@@ -68,9 +96,15 @@ bool AudioDevice::Initialize()
             rawSupported = false;
             LOGW("Raw audio not supported");
         }
+        /*
+        for (auto& p : deviceInfo.Properties()) {
+            LOG("%S\n", p.Key().c_str());
+        }
+        */
     }
 
     hr = MakeAndInitialize<WASAPIRenderer>(&m_wrapper->m_renderer);
+    m_wrapper->m_renderer->SetDeviceId(id);
     if (FAILED(hr)) {
         LOGE("Unable to initialize renderer. %s", HResultToString(hr));
         return 1;

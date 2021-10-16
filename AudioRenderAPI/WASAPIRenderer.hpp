@@ -53,6 +53,7 @@ public:
 
     void SetGenerator(std::shared_ptr<IAudioGenerator> generator) { m_toneSource = generator; }
 
+    HRESULT SetDeviceId(winrt::hstring deviceId);
     HRESULT SetProperties(DEVICEPROPS props);
     HRESULT InitializeAudioDeviceAsync();
     HRESULT StartPlaybackAsync();
