@@ -33,8 +33,6 @@ target_link_libraries(${_target} nanosvg) # Vector image loading
 
 # WASAPI Audio
 target_link_libraries(${_target} "Mfplat.lib")
-#target_link_libraries(${_target} "Dsound.lib")
-#target_link_libraries(${_target} "dxguid.lib")
 target_link_libraries(${_target} "windowsapp.lib")
 
 # Visualization support

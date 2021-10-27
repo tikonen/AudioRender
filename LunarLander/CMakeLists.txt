@@ -4,7 +4,7 @@ project(LunarLander)
 set(_target LunarLander)
 
 file(GLOB_RECURSE _source_files
-  "${CMAKE_CURRENT_SOURCE_DIR}/*.[c|h]pp" 
+  "${CMAKE_CURRENT_SOURCE_DIR}/*.[c|h]pp"
 )
 
 set(_common_dir "${CMAKE_SOURCE_DIR}/Common")
@@ -34,12 +34,10 @@ target_link_libraries(${_target} nanosvg) # Vector image loading
 
 # WASAPI Audio
 target_link_libraries(${_target} "Mfplat.lib")
-#target_link_libraries(${_target} "Dsound.lib")
-#target_link_libraries(${_target} "dxguid.lib")
 target_link_libraries(${_target} "windowsapp.lib")
 
 # Visualization support
-target_link_libraries(${_target} ImGui) 
+target_link_libraries(${_target} ImGui)
 target_link_libraries(${_target} "D3D10.lib")
 
 # Set working directory to target exe directory, app looks files from its current directory

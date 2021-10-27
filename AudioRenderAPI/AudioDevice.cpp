@@ -34,9 +34,11 @@ bool AudioDevice::WaitForDeviceState(int seconds, DeviceState state)
     return m_deviceState == state;
 };
 
+// Argument op should be IAsyncAction or IAsyncOperation
 template <class T>
 void WaitSyncOp(T&& op)
 {
+    // https://docs.microsoft.com/en-us/archive/msdn-magazine/2018/june/c-effective-async-with-coroutines-and-c-winrt
     HANDLE event = CreateEvent(nullptr, true, false, nullptr);
     op.Completed([event](auto&& async, winrt::Windows::Foundation::AsyncStatus status) { SetEvent(event); });
     WaitForSingleObject(event, INFINITE);
@@ -46,8 +48,9 @@ void WaitSyncOp(T&& op)
 
 bool AudioDevice::Initialize()
 {
+    // Initializing single threaded to allow embedding as Unity plugin
     winrt::init_apartment(winrt::apartment_type::single_threaded);
-    // CoInitialize(NULL);
+
     HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
 
     if (FAILED(hr)) {
@@ -130,9 +133,10 @@ bool AudioDevice::Initialize()
 
 bool AudioDevice::Start()
 {
-    m_wrapper->m_renderer->InitializeAudioDeviceAsync();
+    HRESULT hr = S_OK;
+    hr = m_wrapper->m_renderer->InitializeAudioDeviceAsync();
 
-    if (WaitForDeviceState(5, DeviceState::DeviceStateInitialized)) {
+    if (SUCCEEDED(hr) && WaitForDeviceState(5, DeviceState::DeviceStateInitialized)) {
         LOG("Audio latency %ld ms", std::lround(1000 * m_wrapper->m_renderer->GetPeriodInSeconds()));
 
         m_wrapper->m_renderer->StartPlaybackAsync();

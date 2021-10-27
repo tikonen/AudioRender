@@ -6,7 +6,7 @@ set(_target AudioRenderAPI)
 include(../cmake/vs_precompiled.cmake)
 
 file(GLOB_RECURSE _source_files
-  "${CMAKE_CURRENT_SOURCE_DIR}/*.[c|h]pp"  
+  "${CMAKE_CURRENT_SOURCE_DIR}/*.[c|h]pp"
   "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
 )
 

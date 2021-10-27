@@ -20,6 +20,9 @@ std::atomic_bool g_running = true;
 #define VERSION "0.1"
 #define APP_NAME "LunarLander"
 
+#define X_SCALE (-2.f)
+#define Y_SCALE (-2.f)
+
 void mainLoop(int demoMode, AudioRender::IDrawDevice* device);
 
 int main(int argc, char* argv[])
@@ -44,15 +47,6 @@ int main(int argc, char* argv[])
             audio = true;
         } else if (!_stricmp(arg, "/T")) {
             testTone = true;
-            /*
-        } else if (!_stricmp(arg, "/D")) {
-            if (argc >= 1) {
-                demoMode = atoi(*argv);
-                argv++;
-                argc--;
-            } else
-                DisplayUsage();
-                */
         } else {
             DisplayUsage();
         }
@@ -94,9 +88,7 @@ int main(int argc, char* argv[])
             audioDevice.Stop();
         } else {
             auto audioGenerator = std::make_shared<AudioRender::AudioGraphicsBuilder>();
-            // Give some margin and flip Y axis
-            // audioGenerator->setScale(-0.95f, -0.95f);
-            audioGenerator->setScale(-2.f, -2.f);
+            audioGenerator->setScale(X_SCALE, Y_SCALE);
             audioDevice.SetGenerator(audioGenerator);
             audioDevice.Start();
 
@@ -139,7 +131,6 @@ void DisplayUsage()
         "/S\tVisual simulation.\n"
         "/A\tAudio render.\n"
         "/T\tTest tone.\n"
-        //"/D <mode>\tSpecify demo mode: 1 - Basic, 2 - Raster Image or 3 - SVG Graphics.\n"
         "/?\tPrint this message.\n"
         "\n";
     printf(msg);
