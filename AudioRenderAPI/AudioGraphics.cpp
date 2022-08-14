@@ -44,20 +44,17 @@ short Convert<short>(double Value)
 
 bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
 {
-    while (true) {
-        // figure out where to write data
-        if (ctx.bufferIdx >= m_maxBufferCount) return false;
-        if (ctx.bufferIdx >= m_audioBuffers.size()) {
-            m_audioBuffers.resize(ctx.bufferIdx + 1);
-            m_audioBuffers[ctx.bufferIdx].resize(m_audioBuffers[0].size());
-        }
-        if (ctx.idx >= m_audioBuffers[ctx.bufferIdx].size()) {
-            ctx.idx = 0;
-            ctx.bufferIdx++;
-            continue;
-        }
-        break;
+    // figure out where to write data
+    if (ctx.idx >= m_audioBuffers[ctx.bufferIdx].size()) {
+        ctx.idx = 0;
+        ctx.bufferIdx++;
     }
+    if (ctx.bufferIdx >= m_maxBufferCount) return false;
+    if (ctx.bufferIdx >= m_audioBuffers.size()) {
+        m_audioBuffers.resize(ctx.bufferIdx + 1);
+        m_audioBuffers[ctx.bufferIdx].resize(m_audioBuffers[0].size());
+    }
+
     assert(ctx.bufferIdx < m_audioBuffers.size() && m_audioBuffers.size() <= m_maxBufferCount);
 
     void* buffer = m_audioBuffers[ctx.bufferIdx].data() + ctx.idx;
@@ -144,11 +141,13 @@ void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops
     if (ctx.bufferIdx < m_minBufferCount) {
         m_audioBuffers.resize(m_minBufferCount);
     }
-    auto& buf = m_audioBuffers[ctx.bufferIdx];
-    memset(buf.data() + ctx.idx, 0, buf.size() - ctx.idx);
-    for (size_t i = ctx.bufferIdx + 1; i < m_audioBuffers.size(); i++) {
-        auto& buf = m_audioBuffers[i];
-        memset(buf.data(), 0, buf.size());
+    if (ctx.bufferIdx < m_audioBuffers.size()) {
+        auto& buf = m_audioBuffers[ctx.bufferIdx];
+        memset(buf.data() + ctx.idx, 0, buf.size() - ctx.idx);
+        for (size_t i = ctx.bufferIdx + 1; i < m_audioBuffers.size(); i++) {
+            auto& buf = m_audioBuffers[i];
+            memset(buf.data(), 0, buf.size());
+        }
     }
     m_rendering = true;
     // TODO compare points to pointCount
