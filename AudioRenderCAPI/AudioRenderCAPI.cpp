@@ -129,9 +129,3 @@ __declspec(dllexport) void audioRender_DrawLine(audioRender_DrawDevice* device, 
     if (device == nullptr || to == nullptr) return;
     getDrawDevice(device)->DrawLine({to->x, to->y}, intensity);
 }
-
-__declspec(dllexport) void audioRender_SyncPoint(audioRender_DrawDevice* device, const struct audioRender_Point* to)
-{
-    if (device == nullptr || to == nullptr) return;
-    getDrawDevice(device)->SyncPoint({to->x, to->y});
-}

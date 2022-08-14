@@ -63,9 +63,6 @@ AUDIO_RENDER_API void audioRender_DrawCircle(audioRender_DrawDevice* device, flo
 // Line intensity will lerp linearnly towards intensity, if >.
 AUDIO_RENDER_API void audioRender_DrawLine(audioRender_DrawDevice* device, const struct audioRender_Point* to, float intensity = -1);
 
-// Move draw beam to point and let it stabilize (Results are very hardware dependent!)
-AUDIO_RENDER_API void audioRender_SyncPoint(audioRender_DrawDevice* device, const struct audioRender_Point* to);
-
 #if defined __cplusplus
 }
 #endif

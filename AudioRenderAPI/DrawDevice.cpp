@@ -27,15 +27,13 @@ void DrawDevice::DrawLine(Point to, float intensity)
     m_operations.emplace_back(op);
 }
 
-void DrawDevice::SyncPoint(Point to)
+void DrawDevice::SetIntensity(float intensity) { m_currIntensity = intensity; }
+
+void DrawDevice::SetPoint(Point p)
 {
-    m_currPoint = to;
+    m_currPoint = p;
     GraphicsPrimitive op{GraphicsPrimitive::Type::DRAW_SYNC, -1, m_currIntensity, m_currIntensity, m_currPoint, m_currPoint};
     m_operations.emplace_back(op);
 }
-
-void DrawDevice::SetIntensity(float intensity) { m_currIntensity = intensity; }
-
-void DrawDevice::SetPoint(Point p) { m_currPoint = p; }
 
 }  // namespace AudioRender

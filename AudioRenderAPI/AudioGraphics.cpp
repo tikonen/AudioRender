@@ -104,7 +104,8 @@ int AudioGraphicsBuilder::EncodeLine(const GraphicsPrimitive& p, EncodeCtx& ctx)
     const float l = sqrtf(pow(vx, 2) + pow(vy, 2));
     int stepCount = std::lround(LineSegmentMultiplier * l * p.intensity * SpeedMultiplier + 0.5f);
 
-    // TODO grading intensity
+    // TODO should work differently when syncPoint has been reset?
+    // This does draw twice corners on subsequent lines?
 
     for (int i = 0; i <= stepCount; i++) {
         float x = p.p.x + i * vx / stepCount;
@@ -116,14 +117,8 @@ int AudioGraphicsBuilder::EncodeLine(const GraphicsPrimitive& p, EncodeCtx& ctx)
 
 int AudioGraphicsBuilder::EncodeSync(const GraphicsPrimitive& p, EncodeCtx& ctx)
 {
-    const int stepCount = 2;  // how many slots stabilisation takes
-
-    for (int i = 0; i < stepCount; i++) {
-        float x = p.p.x;
-        float y = p.p.y;
-        AddToBuffer(x * m_xScale, y * m_yScale, ctx);
-    }
-    return stepCount;
+    AddToBuffer(0, 0, ctx);
+    return 1;
 }
 
 void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops)

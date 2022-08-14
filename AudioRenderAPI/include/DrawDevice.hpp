@@ -48,9 +48,6 @@ public:
     // draw line from current point to target point. Target point becomes new current point.
     // Line intensity will lerp linearnly towards intensity, if >= 0.
     virtual void DrawLine(Point to, float intensity = -1) = 0;
-
-    // Move draw beam to point and let it stabilize (Results are very hardware dependent!)
-    virtual void SyncPoint(Point to) = 0;
 };
 
 class DrawDevice : public IDrawDevice
@@ -65,7 +62,6 @@ public:
     void SetIntensity(float intensity) override;
     void DrawCircle(float radius) override;
     void DrawLine(Point to, float intensity = -1) override;
-    void SyncPoint(Point to) override;
     Rectangle GetViewPort() override { return m_viewPort; }
 
 protected:
