@@ -120,9 +120,7 @@ int AudioGraphicsBuilder::EncodeSync(const GraphicsPrimitive& p, EncodeCtx& ctx)
 
 void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops)
 {
-    // const unsigned int pointCount = (unsigned int)(m_audioBuffers.size() * m_audioBuffers[0].size() / m_wfx.nBlockAlign);
-    unsigned int points = 0;
-
+    int points = 0;
     EncodeCtx ctx{0};
 
     for (size_t i = 0; i < m_operations.size(); i++) {
@@ -143,6 +141,7 @@ void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops
     }
     if (ctx.bufferIdx < m_audioBuffers.size()) {
         auto& buf = m_audioBuffers[ctx.bufferIdx];
+        assert(ctx.idx <= buf.size());
         memset(buf.data() + ctx.idx, 0, buf.size() - ctx.idx);
         for (size_t i = ctx.bufferIdx + 1; i < m_audioBuffers.size(); i++) {
             auto& buf = m_audioBuffers[i];
@@ -150,8 +149,6 @@ void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops
         }
     }
     m_rendering = true;
-    // TODO compare points to pointCount
-    // printf("Buf: %d Idx: %d\n", ctx.bufferIdx, ctx.idx);
 }
 
 //  Determine IEEE Float or PCM samples based on media type
