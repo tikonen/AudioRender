@@ -45,6 +45,7 @@ short Convert<short>(double Value)
 bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
 {
     // figure out where to write data
+    if (ctx.bufferIdx >= m_maxBufferCount) return false;
     if (ctx.idx >= m_audioBuffers[ctx.bufferIdx].size()) {
         ctx.idx = 0;
         ctx.bufferIdx++;
@@ -101,20 +102,23 @@ int AudioGraphicsBuilder::EncodeLine(const GraphicsPrimitive& p, EncodeCtx& ctx)
     const float l = sqrtf(pow(vx, 2) + pow(vy, 2));
     int stepCount = std::lround(LineSegmentMultiplier * l * p.intensity * SpeedMultiplier + 0.5f);
 
-    // TODO should work differently when syncPoint has been reset?
-    // This does draw twice corners on subsequent lines?
+    // If syncpoint has not been set don't draw the first dot as it was drawn already on previous
+    // encode call.
+    int startPoint = ctx.syncPoint ? 0 : 1;
 
-    for (int i = 0; i <= stepCount; i++) {
+    for (int i = startPoint; i <= stepCount; i++) {
         float x = p.p.x + i * vx / stepCount;
         float y = p.p.y + i * vy / stepCount;
         AddToBuffer(x * m_xScale, y * m_yScale, ctx);
     }
-    return stepCount;
+    ctx.syncPoint = false;
+    return stepCount - startPoint;
 }
 
 int AudioGraphicsBuilder::EncodeSync(const GraphicsPrimitive& p, EncodeCtx& ctx)
 {
     AddToBuffer(0, 0, ctx);
+    ctx.syncPoint = true;
     return 1;
 }
 

@@ -45,6 +45,7 @@ private:
     struct EncodeCtx {
         int bufferIdx;
         int idx;
+        bool syncPoint;
     };
     int EncodeCircle(const GraphicsPrimitive& p, EncodeCtx& ctx);
     int EncodeLine(const GraphicsPrimitive& p, EncodeCtx& ctx);
