@@ -74,8 +74,8 @@ int main(int argc, char* argv[])
 
         if (testTone) {
             const int frequency = 1000;
-            auto toneGenerator = std::make_shared<ToneSampleGenerator>(frequency);
-            audioDevice.SetGenerator(toneGenerator);
+            auto audioGenerator = std::make_shared<ToneSampleGenerator>(frequency);
+            audioDevice.SetGenerator(audioGenerator);
             LOG("Playing %0.1fkHz test tone", frequency / 1000.f);
             audioDevice.Start();
 
@@ -89,8 +89,16 @@ int main(int argc, char* argv[])
             audioDevice.Stop();
         } else {
             auto audioGenerator = std::make_shared<AudioRender::AudioGraphicsBuilder>();
-            // Give some margin and flip Y axis
+            // Give some margin and flip Y axis. Very old tube scopes render sometimes y-axis upside down.
+            // If image shows sideways on the scope, swap channel 1 and  channel 2 wires to the scope.
             audioGenerator->setScale(0.95f, -0.95f);
+            if (demoMode == 1) {
+                // Mode 1 has so little data that without this setting the render would spin too way fast
+                audioGenerator->setFixedRenderingRate(true);
+            } else if (demoMode == 3) {
+                // flip x axis also for SVG images
+                audioGenerator->setScale(-0.95f, -0.95f);
+            }
             audioDevice.SetGenerator(audioGenerator);
             audioDevice.Start();
 

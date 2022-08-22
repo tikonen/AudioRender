@@ -741,7 +741,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             if (p > 0) {
                 static Timer blinkTimer(true, 0.3f);
                 blinkTimer.update(elapsed / 1000.f);
-
+                int step = 1;
                 if (p > lowFuelAlarmLevel || blinkTimer.flipflop) {  // blink if low fuel
                     Vector2Df needle(-0.5, 0);
                     const int steps = 20;
@@ -750,7 +750,11 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     device->SetPoint({needle.x, -needle.y});
                     for (float r = 0; r <= p; r += 1.f / steps) {
                         needle = vrotate(needle, -angleStep);
-                        device->DrawLine({needle.x, -needle.y});
+                        if (step)
+                            device->DrawLine({needle.x, -needle.y});
+                        else
+                            device->SetPoint({needle.x, -needle.y});
+                        step = 1 - step;
                     }
                 }
             }
