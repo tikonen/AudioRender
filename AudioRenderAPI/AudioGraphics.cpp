@@ -9,17 +9,13 @@ namespace AudioRender
 {
 bool AudioGraphicsBuilder::WaitSync()
 {
-    std::unique_lock<std::mutex> lock(m_mutex);
-    m_frameCv.wait(lock, [&]() { return m_rendering == false; });
+    // Consider sync completed when there is one or less ready data blocks waiting for rendering
+    std::unique_lock<std::mutex> lock(m_renderMutex);
+    m_frameCv.wait(lock, [&]() { return m_renderQueue.size() <= 1; });
     return true;
 }
 
-void AudioGraphicsBuilder::Submit()
-{
-    std::lock_guard<std::mutex> lock(m_mutex);
-    EncodeAudio(m_operations);
-    m_bufferIdx = 0;
-}
+void AudioGraphicsBuilder::Submit() { EncodeAudio(m_operations); }
 
 #include <mmreg.h>
 #include <mfapi.h>
@@ -44,36 +40,39 @@ short Convert<short>(double Value)
 
 bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
 {
-    // figure out where to write data
-    if (ctx.bufferIdx >= m_maxBufferCount) return false;
-    if (ctx.idx >= m_audioBuffers[ctx.bufferIdx].size()) {
-        ctx.idx = 0;
-        ctx.bufferIdx++;
-    }
-    if (ctx.bufferIdx >= m_maxBufferCount) return false;
-    if (ctx.bufferIdx >= m_audioBuffers.size()) {
-        m_audioBuffers.resize(ctx.bufferIdx + 1);
-        m_audioBuffers[ctx.bufferIdx].resize(m_audioBuffers[0].size());
-    }
-
-    assert(ctx.bufferIdx < m_audioBuffers.size() && m_audioBuffers.size() <= m_maxBufferCount);
-
-    void* buffer = m_audioBuffers[ctx.bufferIdx].data() + ctx.idx;
+    void* buffer = m_audioBuffer.data() + m_bufferIdx;
     if (m_sampleType == RenderSampleType::SampleType16BitPCM) {
         short* pcmbuffer = static_cast<short*>(buffer);
         pcmbuffer[0] = Convert<short>(x);  // left channel
         pcmbuffer[1] = Convert<short>(y);  // right channel
-        ctx.idx += sizeof(short) * 2;
+        m_bufferIdx += sizeof(short) * 2;
 
     } else if (m_sampleType == RenderSampleType::SampleTypeFloat) {
         float* fltbuffer = static_cast<float*>(buffer);
         fltbuffer[0] = Convert<float>(x);  // left channel
         fltbuffer[1] = Convert<float>(y);  // right channel
-        ctx.idx += sizeof(float) * 2;
+        m_bufferIdx += sizeof(float) * 2;
     }
-    assert(ctx.idx <= m_audioBuffers[ctx.bufferIdx].size());
+    assert(m_bufferIdx <= m_bufferSize);
 
+    if (m_bufferIdx >= m_bufferSize) {
+        // audiorender buffer is full, submit it for rendering
+        QueueBuffer();
+    }
     return true;
+}
+
+void AudioGraphicsBuilder::QueueBuffer()
+{
+    if (m_bufferIdx < m_bufferSize) {
+        // zero out remaining bytes
+        memset(m_audioBuffer.data() + m_bufferIdx, 0, m_bufferSize - m_bufferIdx);
+    }
+
+    // audiorender buffer is full, submit it for rendering
+    std::lock_guard<std::mutex> lock(m_renderMutex);
+    m_renderQueue.emplace(m_audioBuffer);
+    m_bufferIdx = 0;
 }
 
 const float SpeedMultiplier = 5.0f;
@@ -139,20 +138,13 @@ void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops
         }
     }
 
-    // zero out rest
-    if (ctx.bufferIdx < m_minBufferCount) {
-        m_audioBuffers.resize(m_minBufferCount);
-    }
-    if (ctx.bufferIdx < m_audioBuffers.size()) {
-        auto& buf = m_audioBuffers[ctx.bufferIdx];
-        assert(ctx.idx <= buf.size());
-        memset(buf.data() + ctx.idx, 0, buf.size() - ctx.idx);
-        for (size_t i = ctx.bufferIdx + 1; i < m_audioBuffers.size(); i++) {
-            auto& buf = m_audioBuffers[i];
-            memset(buf.data(), 0, buf.size());
+    if (m_fixedRate) {
+        // This mode submits always buffers for rendering, even when there is
+        // not enough data in the buffer. This limits rendering speed.
+        if (m_bufferIdx < m_bufferSize) {
+            QueueBuffer();
         }
     }
-    m_rendering = true;
 }
 
 //  Determine IEEE Float or PCM samples based on media type
@@ -188,16 +180,11 @@ HRESULT AudioGraphicsBuilder::Initialize(UINT32 FramesPerPeriod, WAVEFORMATEX* w
     long renderDataLength = (m_wfx.nSamplesPerSec / Frequency * m_wfx.nBlockAlign) + (renderBufferSize - 1);
     int renderBufferCount = renderDataLength / renderBufferSize;
 
-    m_minBufferCount = renderBufferCount;
-    m_maxBufferCount = 2 * renderBufferCount;
-
     // Calculate effective fps
-    int fps = m_wfx.nSamplesPerSec / m_minBufferCount / FramesPerPeriod;
+    int fps = m_wfx.nSamplesPerSec / renderBufferCount / FramesPerPeriod;
 
-    m_audioBuffers.resize(m_minBufferCount);
-    for (size_t i = 0; i < m_audioBuffers.size(); i++) {
-        m_audioBuffers[i].resize(renderBufferSize);
-    }
+    m_bufferSize = renderBufferSize;
+    m_audioBuffer.resize(m_bufferSize);
 
     ResolveMixFormatType(wfx);
     if (m_sampleType == RenderSampleType::SampleTypeUnknown) {
@@ -212,33 +199,30 @@ HRESULT AudioGraphicsBuilder::FillSampleBuffer(UINT32 BytesToRead, BYTE* Data)
     if (nullptr == Data) {
         return E_POINTER;
     }
-    m_rendering = true;
-    std::lock_guard<std::mutex> lock(m_mutex);
 
-    int idx = m_bufferIdx++;
-    if (m_bufferIdx == m_audioBuffers.size()) {
-        // this frame data has been dispatched
-        m_bufferIdx = 0;
-        m_rendering = false;
-        m_frameCv.notify_all();
+    std::lock_guard<std::mutex> lock(m_renderMutex);
+
+    if (m_renderQueue.size() > 0) {
+        const auto& buffer = m_renderQueue.front();
+        if (BytesToRead > buffer.size()) {
+            return E_INVALIDARG;
+        }
+        assert(BytesToRead == buffer.size());
+        memcpy(Data, buffer.data(), BytesToRead);
+        m_renderQueue.pop();
     }
-    const auto& buffer = m_audioBuffers[idx];
-    if (BytesToRead > buffer.size()) {
-        return E_INVALIDARG;
-    }
-    memcpy(Data, buffer.data(), BytesToRead);
+
+    // Notify sync if queue is running low.
+    if (m_renderQueue.size() <= 1) m_frameCv.notify_all();
 
     return S_OK;
 }
 
 void AudioGraphicsBuilder::Flush()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(m_renderMutex);
 
-    for (size_t i = 0; i < m_audioBuffers.size(); i++) {
-        memset(m_audioBuffers[i].data(), 0, m_audioBuffers[i].size());
-    }
-    m_bufferIdx = 0;
+    while (m_renderQueue.size()) m_renderQueue.pop();
 }
 
 }  // namespace AudioRender

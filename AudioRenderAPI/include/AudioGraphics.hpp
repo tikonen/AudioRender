@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <queue>
 #include <mutex>
 #include <condition_variable>
 
@@ -20,6 +21,8 @@ public:
         m_yScale = yscale;
     }
 
+    void setFixedRenderingRate(bool fixedRate) { m_fixedRate = fixedRate; }
+
     //==========================================================
     // IDrawDevice interface
     bool WaitSync() override;
@@ -32,7 +35,7 @@ public:
         // never stop the madness
         return false;
     }
-    UINT32 GetBufferLength() override { return UINT32(m_audioBuffers[0].size()); }
+    UINT32 GetBufferLength() override { return UINT32(m_bufferSize); }
     void Flush() override;
 
     HRESULT Initialize(UINT32 FramesPerPeriod, WAVEFORMATEX* wfx) override;
@@ -40,23 +43,27 @@ public:
 
 private:
     // Graphics encoding to audio
-    std::mutex m_mutex;
     void EncodeAudio(const std::vector<GraphicsPrimitive>& ops);
     struct EncodeCtx {
-        int bufferIdx;
-        int idx;
         bool syncPoint;
     };
     int EncodeCircle(const GraphicsPrimitive& p, EncodeCtx& ctx);
     int EncodeLine(const GraphicsPrimitive& p, EncodeCtx& ctx);
     int EncodeSync(const GraphicsPrimitive& p, EncodeCtx& ctx);
     bool AddToBuffer(float x, float y, EncodeCtx& ctx);
-    std::vector<std::vector<BYTE>> m_audioBuffers;
-    std::condition_variable m_frameCv;
-    int m_minBufferCount;
-    int m_maxBufferCount;
+    void QueueBuffer();
+
+    // Current buffer that is used to build rendering data
+    std::vector<uint8_t> m_audioBuffer;
     int m_bufferIdx = 0;
-    bool m_rendering = false;
+    int m_bufferSize;
+    bool m_fixedRate = false;
+
+    // Buffers that are ready for rendering and can be picked up by the FillSampleBuffer
+    std::queue<std::vector<uint8_t>> m_renderQueue;
+    std::mutex m_renderMutex;
+    std::condition_variable m_frameCv;
+
     enum RenderSampleType {
         SampleTypeUnknown,
         SampleTypeFloat,
