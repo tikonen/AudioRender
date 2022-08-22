@@ -226,9 +226,12 @@ struct Controller {
     // Key zoomOut = Key(0x58);  // X
     Key pause = Key(0x50);  // P
     Key reset = Key(0x52);  // R
+    Key quit = Key(0x51);   // Q
 
     // DEBUG
     Key nextLevel = Key(0x4E);  // 'N'
+
+    std::vector<Key*> keys;
 
     Controller()
     {
@@ -237,21 +240,26 @@ struct Controller {
             "Arrow Right - Rotate Right\n"
             "Space Bar - Thrust\n"
             "P - Pause Game\n"
+            "Q - Quit Game\n"
             "Arrow Up - Zoom In\n"
             "Arrow Down - Zoom Out\n"
             "R - Reset Game\n");
+
+        keys.push_back(&left);
+        keys.push_back(&right);
+        keys.push_back(&throttle);
+        keys.push_back(&zoomIn);
+        keys.push_back(&zoomOut);
+        keys.push_back(&pause);
+        keys.push_back(&reset);
+        keys.push_back(&quit);
     };
 
     void update()
     {
-        left.update();
-        right.update();
-        throttle.update();
-        zoomIn.update();
-        zoomOut.update();
-        pause.update();
-        reset.update();
-        nextLevel.update();
+        for (auto* key : keys) {
+            key->update();
+        }
     }
 };
 
@@ -379,6 +387,10 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         // Controller
         controller.update();
+
+        if (controller.quit.pressed()) {
+            running = false;
+        }
 
         if (controller.pause.pressed()) {
             paused = !paused;

@@ -165,6 +165,11 @@ void rasterRender(AudioRender::IDrawDevice* device)
 void svgRender(AudioRender::IDrawDevice* device)
 {
     // SVG rendering
+    printf("========================================================================\n");
+    printf("Key up and Key down - Experiment with the line intensity.\n");
+    printf("Space Bar - Cycle images.\n");
+    printf("Q - Quit\n");
+
 
     // Load SVG
     std::shared_ptr<AudioRender::SVGImage> vectorizer;
@@ -174,6 +179,9 @@ void svgRender(AudioRender::IDrawDevice* device)
     unsigned int ts = 0;
     int imgidx = 0;
     bool spaceDown = false;
+    float intensity = 0.5f;
+    bool keyUpDown = false;
+    bool keyDownDown = false;
 
     while (g_running) {
         device->WaitSync();
@@ -182,19 +190,40 @@ void svgRender(AudioRender::IDrawDevice* device)
         bool spacePressed = !spaceDown && (0x8000 & GetKeyState(VK_SPACE));
         spaceDown = (0x8000 & GetKeyState(VK_SPACE));
 
+        bool keyUpPressed = !keyUpDown && (0x8000 & GetKeyState(VK_UP));
+        keyUpDown = (0x8000 & GetKeyState(VK_UP));
+
+        bool keyDownPressed = !keyDownDown && (0x8000 & GetKeyState(VK_DOWN));
+        keyDownDown = (0x8000 & GetKeyState(VK_DOWN));
+
+        if (0x8000 & GetKeyState(0x51)) {  // 'Q'
+            g_running = false;
+        }
+
+        if (keyUpPressed) {
+            intensity += 0.1f;
+        }
+        if (keyDownPressed) {
+            intensity -= 0.1f;
+            if (intensity <= 0.1f) intensity = 0.1f;
+        }
+        if (keyUpPressed || keyDownPressed) printf("Intensity %.1f\n", intensity);
+
         unsigned int now = GetTickCount();
-        if (ts <= now || spacePressed) {
-            // Swap image every 5 seconds
-            ts = now + 5000;
+        bool imageSwapped = ts <= now || spacePressed;
+        if (imageSwapped) {
+            // Swap image every 8 seconds
+            ts = now + 8000;
             vectorizer = std::make_shared<AudioRender::SVGImage>();
             if (!vectorizer->loadImage(SVGsamples[imgidx])) {
                 vectorizer = nullptr;
                 LOGE("Failed to load \"%s\". %s", SVGsamples[imgidx], GetLastErrorString());
             }
             imgidx = (imgidx + 1) % ARRAYSIZE(SVGsamples);
-
+        }
+        if (imageSwapped || keyUpPressed || keyDownPressed) {
             device->Begin();
-            device->SetIntensity(0.5f);
+            device->SetIntensity(intensity);
             if (vectorizer) {
                 vectorizer->drawImage(device, 1.8f);
             }
