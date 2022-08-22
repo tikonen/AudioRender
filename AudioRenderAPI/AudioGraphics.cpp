@@ -4,12 +4,13 @@
 
 #include "AudioGraphics.hpp"
 #include <Log.hpp>
+#include <mfapi.h>
 
 namespace AudioRender
 {
 bool AudioGraphicsBuilder::WaitSync()
 {
-    // Consider sync completed when there is one or less ready data blocks waiting for rendering
+    // Consider sync completed when there is one or less ready data block waiting for rendering
     std::unique_lock<std::mutex> lock(m_renderMutex);
     m_frameCv.wait(lock, [&]() { return m_renderQueue.size() <= 1; });
     return true;
@@ -17,23 +18,17 @@ bool AudioGraphicsBuilder::WaitSync()
 
 void AudioGraphicsBuilder::Submit() { EncodeAudio(m_operations); }
 
-#include <mmreg.h>
-#include <mfapi.h>
-
 template <typename T>
-T Convert(double Value);
+T Convert(float Value);
 
-//
-//  Convert from double to float, byte, short or int32.
-//
 template <>
-float Convert<float>(double Value)
+float Convert<float>(float Value)
 {
-    return (float)(Value);
+    return (Value);
 };
 
 template <>
-short Convert<short>(double Value)
+short Convert<short>(float Value)
 {
     return (short)(Value * _I16_MAX);
 };
@@ -71,7 +66,8 @@ void AudioGraphicsBuilder::QueueBuffer()
 
     // audiorender buffer is full, submit it for rendering
     std::lock_guard<std::mutex> lock(m_renderMutex);
-    m_renderQueue.emplace(m_audioBuffer);
+    m_renderQueue.emplace(std::move(m_audioBuffer));
+    m_audioBuffer = std::vector<uint8_t>(m_bufferSize);
     m_bufferIdx = 0;
 }
 
@@ -221,8 +217,8 @@ HRESULT AudioGraphicsBuilder::FillSampleBuffer(UINT32 BytesToRead, BYTE* Data)
 void AudioGraphicsBuilder::Flush()
 {
     std::lock_guard<std::mutex> lock(m_renderMutex);
-
     while (m_renderQueue.size()) m_renderQueue.pop();
+    m_bufferIdx = 0;
 }
 
 }  // namespace AudioRender
