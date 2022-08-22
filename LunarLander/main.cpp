@@ -103,6 +103,9 @@ int main(int argc, char* argv[])
     } else {
         DisplayUsage();
     }
+    // Clear console input buffer before exit so keypresses won't flood on console command line on exit
+    FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+
     return 0;
 }
 
