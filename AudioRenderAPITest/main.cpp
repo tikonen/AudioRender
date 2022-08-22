@@ -168,8 +168,8 @@ void svgRender(AudioRender::IDrawDevice* device)
 
     // Load SVG
     std::shared_ptr<AudioRender::SVGImage> vectorizer;
-    const char* SVGsamples[] = {
-        "anarchy.svg", "communism.svg", "Heart-hand-shake.svg", "nano.svg", "nuclear.svg", "pentagram.svg", "SCP_Foundation.svg", "vault-tec-logo.svg"};
+    const char* SVGsamples[] = {"anarchy.svg", "communism.svg", "Heart-hand-shake.svg", "poison.svg", "nano.svg", "nuclear.svg", "pentagram.svg",
+        "SCP_Foundation.svg", "vault-tec-logo.svg"};
 
     unsigned int ts = 0;
     int imgidx = 0;
