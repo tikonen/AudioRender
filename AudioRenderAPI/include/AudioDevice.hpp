@@ -25,8 +25,15 @@ public:
     void SetGenerator(std::shared_ptr<IAudioGenerator> generator);
     DeviceState GetDeviceState() { return m_deviceState; };
 
+    struct Configuration {
+        std::wstring deviceName = L"DAC Device";    // Name of preferred audio device. If not defined or found, try to use default devices as configured below.
+        bool fallBackToCommunicationDevice = true;  // If true can use default communication audio device
+        bool fallBackToDefaultDevice = true;        // If true can use default audio device
+    };
+
     bool WaitForDeviceState(int seconds, DeviceState state);
     bool Initialize();
+    bool InitializeWithConfig(Configuration& config);
     bool Start();
     void Stop();
 };

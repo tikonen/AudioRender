@@ -48,6 +48,12 @@ void WaitSyncOp(T&& op)
 
 bool AudioDevice::Initialize()
 {
+    Configuration defaultConfig;
+    return InitializeWithConfig(defaultConfig);
+}
+
+bool AudioDevice::InitializeWithConfig(Configuration& config)
+{
     // Initializing single threaded to allow embedding as Unity plugin
     winrt::init_apartment(winrt::apartment_type::single_threaded);
 
@@ -57,16 +63,11 @@ bool AudioDevice::Initialize()
         LOGE("MediaFoundation startup failed. %s.", HResultToString(hr));
     }
 
-    // List all audio devices and attempt to use DAC Driver device if it's available. If not, use default communications audio device and
-    // failing that the default audio device.
-    winrt::hstring id = MediaDevice::GetDefaultAudioRenderId(winrt::Windows::Media::Devices::AudioDeviceRole::Communications);
-    if (id.empty()) {
-        id = MediaDevice::GetDefaultAudioRenderId(winrt::Windows::Media::Devices::AudioDeviceRole::Default);
-    }
+    winrt::hstring id;
+
     bool rawSupported = false;
     {
-        // Prefer DAC device if it's found
-        const winrt::hstring dacDeviceName = winrt::to_hstring("DAC Device");
+        const winrt::hstring deviceName{config.deviceName};
 
         auto op = winrt::Windows::Devices::Enumeration::DeviceInformation::FindAllAsync(winrt::Windows::Devices::Enumeration::DeviceClass::AudioRender);
         WaitSyncOp(op);
@@ -75,10 +76,24 @@ bool AudioDevice::Initialize()
         for (auto& deviceInfo : devices) {
             auto name = deviceInfo.Name();
             LOG("Device: %S", name.c_str());
-            auto it = std::search(name.begin(), name.end(), dacDeviceName.begin(), dacDeviceName.end());
-            if (it != name.end()) {
-                id = deviceInfo.Id();
+            if (!deviceName.empty()) {
+                auto it = std::search(name.begin(), name.end(), deviceName.begin(), deviceName.end());
+                if (it != name.end()) {
+                    id = deviceInfo.Id();
+                }
             }
+        }
+
+        // If desired audio device was not found, look configured fallback alternatives
+        if (id.empty() && config.fallBackToCommunicationDevice) {
+            id = MediaDevice::GetDefaultAudioRenderId(winrt::Windows::Media::Devices::AudioDeviceRole::Communications);
+        }
+        if (id.empty() && config.fallBackToDefaultDevice) {
+            id = MediaDevice::GetDefaultAudioRenderId(winrt::Windows::Media::Devices::AudioDeviceRole::Default);
+        }
+        if (id.empty()) {
+            LOGE("No audio device found.\n");
+            return false;
         }
 
         std::vector<winrt::hstring> props;
@@ -110,7 +125,7 @@ bool AudioDevice::Initialize()
     m_wrapper->m_renderer->SetDeviceId(id);
     if (FAILED(hr)) {
         LOGE("Unable to initialize renderer. %s", HResultToString(hr));
-        return 1;
+        return false;
     }
 
     DEVICEPROPS props{0};

@@ -70,7 +70,14 @@ int main(int argc, char* argv[])
         mainLoop(demoMode, device);
     } else if (audio) {
         AudioRender::AudioDevice audioDevice;
-        audioDevice.Initialize();
+
+        AudioRender::AudioDevice::Configuration config;
+
+        // Following configuration chooses the default audio device
+        // config.deviceName = L"";
+        // config.fallBackToCommunicationDevice = false;
+
+        audioDevice.InitializeWithConfig(config);
 
         if (testTone) {
             const int frequency = 1000;
