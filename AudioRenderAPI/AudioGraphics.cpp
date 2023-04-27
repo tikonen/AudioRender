@@ -94,7 +94,7 @@ int AudioGraphicsBuilder::EncodeLine(const GraphicsPrimitive& p, EncodeCtx& ctx)
     // get line length
     const float vx = p.toPoint.x - p.p.x;
     const float vy = p.toPoint.y - p.p.y;
-    const float l = sqrtf(pow(vx, 2) + pow(vy, 2));
+    const float l = sqrtf(vx * vx + vy * vy);
     int stepCount = std::lround(LineSegmentMultiplier * l * p.intensity * SpeedMultiplier + 0.5f);
 
     // If syncpoint has not been set don't draw the first dot as it was drawn already on previous

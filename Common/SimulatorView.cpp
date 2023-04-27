@@ -10,6 +10,7 @@
 #include "imgui_platform\imgui_impl_win32.h"
 #include "imgui_platform\imgui_impl_dx10.h"
 
+#include <cmath>
 
 SimulatorRenderView::SimulatorRenderView(std::atomic_bool& running)
     : m_running(running)
