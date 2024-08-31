@@ -68,6 +68,7 @@ private:
         SampleTypeUnknown,
         SampleTypeFloat,
         SampleType16BitPCM,
+        SampleType24BitPCM,
     };
     void ResolveMixFormatType(WAVEFORMATEX* wfx);
     RenderSampleType m_sampleType = SampleTypeUnknown;

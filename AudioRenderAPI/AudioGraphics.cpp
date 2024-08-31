@@ -19,18 +19,24 @@ bool AudioGraphicsBuilder::WaitSync()
 void AudioGraphicsBuilder::Submit() { EncodeAudio(m_operations); }
 
 template <typename T>
-T Convert(float Value);
+inline T Convert(float Value);
 
 template <>
-float Convert<float>(float Value)
+inline float Convert<float>(float Value)
 {
     return (Value);
 };
 
 template <>
-short Convert<short>(float Value)
+inline short Convert<short>(float Value)
 {
     return (short)(Value * _I16_MAX);
+};
+
+template <>
+inline int32_t Convert<int32_t>(float Value)
+{
+    return (int32_t)(Value * _I32_MAX);
 };
 
 bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
@@ -41,7 +47,21 @@ bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
         pcmbuffer[0] = Convert<short>(x);  // left channel
         pcmbuffer[1] = Convert<short>(y);  // right channel
         m_bufferIdx += sizeof(short) * 2;
+    } else if (m_sampleType == RenderSampleType::SampleType24BitPCM) {
+        uint8_t* pcmbuffer = static_cast<uint8_t*>(buffer);
+        int32_t v;
+        
+        v= Convert<int32_t>(x) >> 8;
+        pcmbuffer[0] = v & 0xFF;
+        pcmbuffer[1] = (v >> 8) & 0xFF;
+        pcmbuffer[2] = (v >> 16) & 0xFF;
 
+        v = Convert<int32_t>(y) >> 8;
+        pcmbuffer[3] = v & 0xFF;
+        pcmbuffer[4] = (v >> 8) & 0xFF;
+        pcmbuffer[5] = (v >> 16) & 0xFF;
+        
+        m_bufferIdx += 3 * 2;
     } else if (m_sampleType == RenderSampleType::SampleTypeFloat) {
         float* fltbuffer = static_cast<float*>(buffer);
         fltbuffer[0] = Convert<float>(x);  // left channel
@@ -150,6 +170,8 @@ void AudioGraphicsBuilder::ResolveMixFormatType(WAVEFORMATEX* wfx)
         ((wfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) && (reinterpret_cast<WAVEFORMATEXTENSIBLE*>(wfx)->SubFormat == KSDATAFORMAT_SUBTYPE_PCM))) {
         if (wfx->wBitsPerSample == 16) {
             m_sampleType = SampleType16BitPCM;
+        } else if (wfx->wBitsPerSample == 24) {
+            m_sampleType = SampleType24BitPCM;
         }
     } else if ((wfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) ||
                ((wfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) && (reinterpret_cast<WAVEFORMATEXTENSIBLE*>(wfx)->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT))) {
