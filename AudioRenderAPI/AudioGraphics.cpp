@@ -142,8 +142,8 @@ void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops
     int points = 0;
     EncodeCtx ctx{0};
 
-    for (size_t i = 0; i < m_operations.size(); i++) {
-        const GraphicsPrimitive& p = m_operations[i];
+    for (size_t i = 0; i < ops.size(); i++) {
+        const GraphicsPrimitive& p = ops[i];
         switch (p.type) {
             case GraphicsPrimitive::Type::DRAW_CIRCLE: points += EncodeCircle(p, ctx); break;
             case GraphicsPrimitive::Type::DRAW_LINE: points += EncodeLine(p, ctx); break;

@@ -6,13 +6,15 @@
 
 #include <AudioGraphics.hpp>
 #include <AudioDevice.hpp>
+#include <IntegratorDevice.hpp>
 #include <RasterImage.hpp>
 #include <SVGImage.hpp>
+
+#include "cxxopts.hpp"
 
 #include "ToneSampleGenerator.hpp"
 #include "SimulatorView.hpp"
 
-void DisplayUsage();
 BOOL WINAPI ctrlHandler(DWORD);
 std::atomic_bool g_running = true;
 
@@ -23,39 +25,31 @@ void mainLoop(int demoMode, AudioRender::IDrawDevice* device);
 
 int main(int argc, char* argv[])
 {
-    LOG("%s %s %s", APP_NAME, VERSION, __DATE__);
-    bool audio = false;
-    bool simulation = false;
-    bool testTone = false;
-    int demoMode = 1;
+    cxxopts::Options options(argv[0], APP_NAME " " VERSION " " __DATE__);
+    cxxopts::ParseResult result;
 
-    // skip exe name
-    argc--;
-    argv++;
+    options.add_options()           //
+        ("h,help", "This message")  //
+        ("S", "Simulation render")  //
+        ("A", "Audio render")       //
+        ("I", "Integrator render")  //
+        ("T", "Test audio tone render") //
+        ("D", "Demo mode (1 Basic, 2: Raster Image or 3: SVG Graphics)", cxxopts::value<int>()->default_value("1"));
 
-    while (argc-- > 0) {
-        const char* arg = *argv++;
-        if (!_stricmp(arg, "/h") || !_stricmp(arg, "/?")) {
-            DisplayUsage();
-        } else if (!_stricmp(arg, "/S")) {
-            simulation = true;
-        } else if (!_stricmp(arg, "/A")) {
-            audio = true;
-        } else if (!_stricmp(arg, "/T")) {
-            testTone = true;
-        } else if (!_stricmp(arg, "/D")) {
-            if (argc >= 1) {
-                demoMode = atoi(*argv);
-                argv++;
-                argc--;
-            } else
-                DisplayUsage();
-        } else {
-            DisplayUsage();
-        }
+    try {
+        result = options.parse(argc, argv);
+    } catch (cxxopts::exceptions::exception ex) {
+        printf("%s", ex.what());
+        return 1;
+    }
+    if (result.count("help")) {
+        printf("%s\n", options.help().c_str());
+        return 1;
     }
 
-    if (simulation) {
+    int demoMode = result["D"].as<int>();
+
+    if (result.count("S")) {
         // Use simple window rendering
         std::shared_ptr<SimulatorRenderView> renderView;
         renderView = std::make_shared<SimulatorRenderView>(g_running);
@@ -68,9 +62,8 @@ int main(int argc, char* argv[])
         renderView->SimulateBeamIdle(true);
         AudioRender::IDrawDevice* device = renderView.get();
         mainLoop(demoMode, device);
-    } else if (audio) {
+    } else if (result.count("A")) {
         AudioRender::AudioDevice audioDevice;
-
         AudioRender::AudioDevice::Configuration config;
 
         // Following configuration chooses the default audio device
@@ -79,46 +72,76 @@ int main(int argc, char* argv[])
 
         audioDevice.InitializeWithConfig(config);
 
-        if (testTone) {
-            const int frequency = 1000;
-            auto audioGenerator = std::make_shared<ToneSampleGenerator>(frequency);
-            audioDevice.SetGenerator(audioGenerator);
-            LOG("Playing %0.1fkHz test tone", frequency / 1000.f);
-            audioDevice.Start();
-
-            SetConsoleCtrlHandler(ctrlHandler, TRUE);
-
-            while (g_running) {
-                Sleep(1000);
-            }
-
-            LOG("Stopping");
-            audioDevice.Stop();
-        } else {
-            auto audioGenerator = std::make_shared<AudioRender::AudioGraphicsBuilder>();
-            // Give some margin and flip Y axis. Very old tube scopes render sometimes y-axis upside down.
-            // If image shows sideways on the scope, swap channel 1 and  channel 2 wires to the scope.
-            audioGenerator->setScale(0.95f, -0.95f);
-            if (demoMode == 1) {
-                // Mode 1 has so little data that without this setting the render would spin too way fast
-                audioGenerator->setFixedRenderingRate(true);
-            } else if (demoMode == 3) {
-                // flip x axis also for SVG images
-                audioGenerator->setScale(-0.95f, -0.95f);
-            }
-            audioDevice.SetGenerator(audioGenerator);
-            audioDevice.Start();
-
-            SetConsoleCtrlHandler(ctrlHandler, TRUE);
-
-            AudioRender::IDrawDevice* drawDevice = audioGenerator.get();
-            mainLoop(demoMode, drawDevice);
-
-            LOG("Stopping");
-            audioDevice.Stop();
+        auto audioGenerator = std::make_shared<AudioRender::AudioGraphicsBuilder>();
+        // Give some margin and flip Y axis. Very old tube scopes render sometimes y-axis upside down.
+        // If image shows sideways on the scope, swap channel 1 and  channel 2 wires to the scope.
+        audioGenerator->setScale(0.95f, -0.95f);
+        if (demoMode == 1) {
+            // Mode 1 has so little data that without this setting the render would spin too way fast
+            audioGenerator->setFixedRenderingRate(true);
+        } else if (demoMode == 3) {
+            // flip x axis also for SVG images
+            audioGenerator->setScale(-0.95f, -0.95f);
         }
+        audioDevice.SetGenerator(audioGenerator);
+        audioDevice.Start();
+
+        SetConsoleCtrlHandler(ctrlHandler, TRUE);
+
+        AudioRender::IDrawDevice* drawDevice = audioGenerator.get();
+        mainLoop(demoMode, drawDevice);
+
+        LOG("Stopping");
+        audioDevice.Stop();
+    } else if (result.count("I")) {
+        auto intDevice = std::make_shared<AudioRender::IntegratorDevice>();
+         
+        if (!intDevice->Connect()) {
+            LOG("Cannot connect to integrator");
+            DWORD err = intDevice->lastError();
+            if (err) {
+                LOG("Error: %d %s", err, intDevice->lastErrorStr());
+            } else {
+                LOG("Device not found.");
+            }
+            return 1;
+        }
+        
+        SetConsoleCtrlHandler(ctrlHandler, TRUE);
+
+        AudioRender::IDrawDevice* drawDevice = intDevice.get();
+        mainLoop(demoMode, drawDevice);
+
+        LOG("Stopping");
+        intDevice->Disconnect();
+
+    } else if (result.count("T")) {
+        AudioRender::AudioDevice audioDevice;
+        AudioRender::AudioDevice::Configuration config;
+
+        // Following configuration chooses the default audio device
+        // config.deviceName = L"";
+        // config.fallBackToCommunicationDevice = false;
+
+        audioDevice.InitializeWithConfig(config);
+
+        const int frequency = 1000;
+        auto audioGenerator = std::make_shared<ToneSampleGenerator>(frequency);
+        audioDevice.SetGenerator(audioGenerator);
+        LOG("Playing %0.1fkHz test tone", frequency / 1000.f);
+        audioDevice.Start();
+
+        SetConsoleCtrlHandler(ctrlHandler, TRUE);
+
+        while (g_running) {
+            Sleep(1000);
+        }
+
+        LOG("Stopping");
+        audioDevice.Stop();
     } else {
-        DisplayUsage();
+        printf("%s\n", options.help().c_str());
+        return 1;
     }
     // Clear console input buffer before exit so keypresses won't flood on console command line on exit
     FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
@@ -269,22 +292,3 @@ BOOL WINAPI ctrlHandler(DWORD dwCtrlType)
     return TRUE;
 }
 
-void DisplayUsage()
-{
-    const char* msg = APP_NAME
-        "\n"
-        "Version: " VERSION
-        "\n\n"
-        "Usage:\n"  //
-        APP_NAME
-        " [options]\n"
-        "\nOptions:\n"
-        "/S\tVisual simulation.\n"
-        "/A\tAudio render.\n"
-        "/T\tTest tone.\n"
-        "/D <mode>\tSpecify demo mode: 1 - Basic, 2 - Raster Image or 3 - SVG Graphics.\n"
-        "/?\tPrint this message.\n"
-        "\n";
-    printf(msg);
-    exit(1);
-}

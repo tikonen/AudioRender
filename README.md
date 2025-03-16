@@ -11,7 +11,7 @@ Requires Visual Studio 2017 or later.
 
 3. Run at build folder bin directory: 
 
-   `AudioRenderAPITest.exe /S /D 1`.
+   `AudioRenderAPITest.exe -S -D 1`.
    
   This opens simulated window for demo 1. Try out also demo 2 and 3.
 

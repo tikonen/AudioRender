@@ -3,6 +3,7 @@
 #include <AudioDevice.hpp>
 #include <AudioGraphics.hpp>
 #include <DrawDevice.hpp>
+#include <IntegratorDevice.hpp>
 #include <SimulatorView.hpp>
 
 namespace
@@ -36,6 +37,25 @@ private:
     std::shared_ptr<AudioRender::AudioGraphicsBuilder> m_audioGenerator;
 };
 
+class IntegratorRenderDeviceWrapper : public IDeviceWrapper
+{
+public:
+    IntegratorRenderDeviceWrapper(float scaleX, float scaleY)
+    {
+        m_intDevice.setScale(scaleX, scaleY);
+        if (!m_intDevice.Connect()) {
+            // how to report failure?
+        }
+    }
+
+    ~IntegratorRenderDeviceWrapper() override { m_intDevice.Disconnect(); }
+
+    AudioRender::IDrawDevice* getDrawDevice() override { return &m_intDevice; }
+
+private:
+    AudioRender::IntegratorDevice m_intDevice;
+};
+
 class ScreenRenderDeviceWrapper : public IDeviceWrapper
 {
 public:
@@ -66,6 +86,11 @@ AudioRender::IDrawDevice* getDrawDevice(audioRender_DrawDevice* cApiDevice) { re
 __declspec(dllexport) audioRender_DrawDevice* audioRender_DeviceInitAudioRender(float scaleX, float scaleY)
 {
     return new AudioRenderDeviceWrapper(scaleX, scaleY);
+}
+
+__declspec(dllexport) audioRender_DrawDevice* audioRender_DeviceInitIntegratorRender(float scaleX, float scaleY)
+{
+    return new IntegratorRenderDeviceWrapper(scaleX, scaleY);
 }
 
 __declspec(dllexport) audioRender_DrawDevice* audioRender_DeviceInitScreenRender(

@@ -31,6 +31,9 @@ struct audioRender_Point {
 // Create draw device which uses audio as output
 AUDIO_RENDER_API audioRender_DrawDevice* audioRender_DeviceInitAudioRender(float scaleX, float scaleY);
 
+// Create draw device which uses integrator device as output
+AUDIO_RENDER_API audioRender_DrawDevice* audioRender_DeviceInitIntegratorRender(float scaleX, float scaleY);
+
 // Create draw device which uses screen rendering as output
 AUDIO_RENDER_API audioRender_DrawDevice* audioRender_DeviceInitScreenRender(
     const char* backgroundImagePath, audioRender_Bool simulateFlicker, audioRender_Bool simulateBeamIdle);
@@ -38,7 +41,7 @@ AUDIO_RENDER_API audioRender_DrawDevice* audioRender_DeviceInitScreenRender(
 // Release draw device
 AUDIO_RENDER_API void audioRender_DeviceFree(audioRender_DrawDevice* device);
 
-// Returns when all data has been submitted to audio pipeline and more is needed
+// Returns when all data has been submitted and more is needed
 AUDIO_RENDER_API bool audioRender_WaitSync(audioRender_DrawDevice* device);
 
 // Call to start drawing

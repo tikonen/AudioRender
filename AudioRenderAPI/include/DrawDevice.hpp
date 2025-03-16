@@ -24,6 +24,8 @@ static inline Point operator+(const Point p1, const Point p2) { return {p1.x + p
 class IDrawDevice
 {
 public:
+    virtual ~IDrawDevice() = default;
+
     // Returns when all data has been submitted to audio pipeline and more is needed
     virtual bool WaitSync() = 0;
 
@@ -72,7 +74,6 @@ protected:
         Type type;
         float r;
         float intensity;
-        float toIntensity;
         Point p;
         Point toPoint;
     };
