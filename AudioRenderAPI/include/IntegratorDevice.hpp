@@ -8,31 +8,31 @@ namespace AudioRender
 {
 class IntegratorGraphicsBuilder : public DrawDevice
 {
-public:    
+public:
+    IntegratorGraphicsBuilder();
 
     // how large range is used ]0, 1[, useful for flipping an axis or give the DAC and
     // integrator more headroom.
-    void setScale(float xscale, float yscale)
-    {
-        m_xScale = xscale * 0.5f;
-        m_yScale = yscale * 0.5f;
-    }    
+    void setScale(float xscale, float yscale);
 
 protected:
     // Graphics encoding to samples
     void EncodeSamples(const std::vector<GraphicsPrimitive>& ops);
     struct EncodeCtx {
         bool syncPoint;
+        float xref;
+        float yref;
     };
+    int encodeSync(float x, float y, EncodeCtx& ctx);
     int EncodeCircle(const GraphicsPrimitive& p, EncodeCtx& ctx);
     int EncodeLine(const GraphicsPrimitive& p, EncodeCtx& ctx);
     int EncodeSync(const GraphicsPrimitive& p, EncodeCtx& ctx);
 
     std::vector<FTSample> m_samples;
-    
+
     // Amplitude scale
-    float m_xScale = 0.5f;
-    float m_yScale = 0.5f;
+    float m_xScale;
+    float m_yScale;
 };
 
 class IntegratorDevice : public IntegratorGraphicsBuilder
@@ -42,11 +42,11 @@ public:
 
     bool Connect();
     void Disconnect();
-    
+
 
     //==========================================================
     // IDrawDevice interface
-    bool WaitSync() override;
+    bool WaitSync(int timeoutms) override;
     void Submit() override;
 
     // rounded to multiples of 5
@@ -56,10 +56,13 @@ public:
     const char* lastErrorStr() const { return m_lastErrorStr.c_str(); }
 
 protected:
-    std::wstring findDeviceLink(const GUID& guid);    
+    bool sendPacket(const FTPacket* packet);
+    bool receivePacket(FTPacket* packet);
+
+    std::wstring findDeviceLink(const GUID& guid);
     // Hardware handle
     HANDLE m_hdev = INVALID_HANDLE_VALUE;
-    
+
     // wrapper to hide dependencies from the header
     struct WinUSBDevice;
     std::shared_ptr<WinUSBDevice> m_winusb;

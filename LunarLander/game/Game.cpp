@@ -424,7 +424,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         if (paused) {
             // just show last render
-            device->WaitSync();
+            running = running && device->WaitSync(1000);
             device->Submit();
             continue;
         }
@@ -778,7 +778,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 #endif
 
         // Pass scene to rendering
-        device->WaitSync();
+        running = running && device->WaitSync(1000);
         device->Submit();
     }
 }

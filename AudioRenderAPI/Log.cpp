@@ -45,27 +45,6 @@ const char* HResultToString(const long result)
 }
 
 
-const char* GetErrnoMsg(int errorno)
-{
-    static char buffer[512];
-
-    char tmpbuf[256];
-    bool success;
-#if defined(WIN32)
-    success = strerror_s(tmpbuf, sizeof(tmpbuf), errorno) == 0;
-#else
-    success = strerror_r(errorno, tmpbuf, sizeof(tmpbuf)) == 0;
-#endif
-    if (!success) {
-        snprintf(tmpbuf, sizeof(tmpbuf), "Unknown error");
-    }
-    snprintf(buffer, sizeof(buffer), "(%d) %s", errorno, tmpbuf);
-    return buffer;
-}
-
-const char* GetErrnoString() { return GetErrnoMsg(errno); }
-
-
 void __LOG(const char* mod, _Printf_format_string_ const char* format, ...)
 {
     va_list args;

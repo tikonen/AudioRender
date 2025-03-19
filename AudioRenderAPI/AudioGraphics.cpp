@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include <assert.h>
+#include <chrono>
 
 #include "AudioGraphics.hpp"
 #include <Log.hpp>
@@ -8,12 +9,17 @@
 
 namespace AudioRender
 {
-bool AudioGraphicsBuilder::WaitSync()
-{
+bool AudioGraphicsBuilder::WaitSync(int timeout)
+{    
     // Consider sync completed when there is one or less ready data block waiting for rendering
-    std::unique_lock<std::mutex> lock(m_renderMutex);
-    m_frameCv.wait(lock, [&]() { return m_renderQueue.size() <= 1; });
-    return true;
+    std::unique_lock<std::mutex> lock(m_renderMutex);    
+    auto pred = [&]() { return m_renderQueue.size() <= 1; };
+    if (timeout != 0) {
+        m_frameCv.wait_for(lock, std::chrono::milliseconds(timeout), pred);
+    } else {
+        m_frameCv.wait(lock, pred);
+    }
+    return m_renderQueue.size() <= 1;    
 }
 
 void AudioGraphicsBuilder::Submit() { EncodeAudio(m_operations); }

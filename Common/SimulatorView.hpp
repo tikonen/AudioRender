@@ -67,7 +67,7 @@ public:
 
     //==========================================================
     // IDrawDevice interface
-    bool WaitSync() override;
+    bool WaitSync(int timeoutms) override;
     void Submit() override;
 
 private:

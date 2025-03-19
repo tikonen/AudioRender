@@ -27,7 +27,7 @@ public:
     virtual ~IDrawDevice() = default;
 
     // Returns when all data has been submitted to audio pipeline and more is needed
-    virtual bool WaitSync() = 0;
+    virtual bool WaitSync(int timeoutms) = 0;
 
     // Call to start drawing
     virtual void Begin() = 0;

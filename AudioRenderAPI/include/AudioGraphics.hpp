@@ -21,11 +21,11 @@ public:
         m_yScale = yscale;
     }
 
-    void setFixedRenderingRate(bool fixedRate) { m_fixedRate = fixedRate; }
+    void setFixedRenderingRate(bool fixedRate) { m_fixedRate = fixedRate; }    
 
     //==========================================================
     // IDrawDevice interface
-    bool WaitSync() override;
+    bool WaitSync(int timeout) override;
     void Submit() override;
 
     //==========================================================

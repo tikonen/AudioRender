@@ -18,7 +18,7 @@
 BOOL WINAPI ctrlHandler(DWORD);
 std::atomic_bool g_running = true;
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 #define APP_NAME "AudioRenderAPITest"
 
 void mainLoop(int demoMode, AudioRender::IDrawDevice* device);
@@ -28,12 +28,12 @@ int main(int argc, char* argv[])
     cxxopts::Options options(argv[0], APP_NAME " " VERSION " " __DATE__);
     cxxopts::ParseResult result;
 
-    options.add_options()           //
-        ("h,help", "This message")  //
-        ("S", "Simulation render")  //
-        ("A", "Audio render")       //
-        ("I", "Integrator render")  //
-        ("T", "Test audio tone render") //
+    options.add_options()                //
+        ("h,help", "This message")       //
+        ("S", "Simulation render")       //
+        ("A", "Audio render")            //
+        ("I", "Integrator render")       //
+        ("T", "Test audio tone render")  //
         ("D", "Demo mode (1 Basic, 2: Raster Image or 3: SVG Graphics)", cxxopts::value<int>()->default_value("1"));
 
     try {
@@ -87,6 +87,7 @@ int main(int argc, char* argv[])
         audioDevice.Start();
 
         SetConsoleCtrlHandler(ctrlHandler, TRUE);
+        LOG("Ctrl-C to break.");
 
         AudioRender::IDrawDevice* drawDevice = audioGenerator.get();
         mainLoop(demoMode, drawDevice);
@@ -95,8 +96,9 @@ int main(int argc, char* argv[])
         audioDevice.Stop();
     } else if (result.count("I")) {
         auto intDevice = std::make_shared<AudioRender::IntegratorDevice>();
-         
+
         if (!intDevice->Connect()) {
+
             LOG("Cannot connect to integrator");
             DWORD err = intDevice->lastError();
             if (err) {
@@ -104,10 +106,15 @@ int main(int argc, char* argv[])
             } else {
                 LOG("Device not found.");
             }
+#if 0
             return 1;
+#endif
+        } else {
+            LOG("Connected to integrator");
         }
-        
+
         SetConsoleCtrlHandler(ctrlHandler, TRUE);
+        LOG("Ctrl-C to break.");
 
         AudioRender::IDrawDevice* drawDevice = intDevice.get();
         mainLoop(demoMode, drawDevice);
@@ -132,6 +139,7 @@ int main(int argc, char* argv[])
         audioDevice.Start();
 
         SetConsoleCtrlHandler(ctrlHandler, TRUE);
+        LOG("Ctrl-C to break.");
 
         while (g_running) {
             Sleep(1000);
@@ -148,6 +156,7 @@ int main(int argc, char* argv[])
     return 0;
 }
 
+#if 0
 void basicRender(AudioRender::IDrawDevice* device)
 {
     // Basic rendering loop
@@ -156,11 +165,12 @@ void basicRender(AudioRender::IDrawDevice* device)
 
     while (g_running) {
         device->Begin();
+
         device->SetIntensity(0.5f);
         device->SetPoint({0.0, 0.0});
         device->DrawCircle(0.5);
 
-        const float rad = i++ / 360.f * pi;
+        const float rad = i++ / 360.f * pi;        
         const float sinr = sin(rad);
         const float cosr = cos(rad);
         auto point = [=](float x, float y) { return AudioRender::Point{cosr * x - sinr * y, sinr * x + cosr * y}; };
@@ -171,10 +181,60 @@ void basicRender(AudioRender::IDrawDevice* device)
         device->DrawLine(point(-.5f, .0f));
         device->DrawLine(point(.0, .5f));
 
-        device->WaitSync();
+        if (!device->WaitSync(1000)) g_running = false;
         device->Submit();
     }
 }
+#else
+void basicRender(AudioRender::IDrawDevice* device)
+{
+    // Basic rendering loop
+    float i = 0;
+    const float pi = 3.414f;
+ 
+    while (g_running) {
+        device->Begin();
+
+        device->SetIntensity(0.3f);
+        device->SetPoint({0.0, 0.0});
+        device->DrawCircle(0.5);
+
+        const float rad = i++ / 360.f * pi;        
+        const float sinr = sin(rad);
+        const float cosr = cos(rad);
+        auto point = [=](float x, float y) { return AudioRender::Point{cosr * x - sinr * y, sinr * x + cosr * y}; };
+        //device->SetIntensity(0.25f);
+        device->SetIntensity(0.25f);
+        device->SetPoint(point(.0f, .0f));
+        //device->SetPoint(point(.0, .5f));
+        device->DrawLine(point(.0f, .5f));
+        device->DrawLine(point(.5f, .0));
+        device->DrawLine(point(.0, -.5f));
+        device->DrawLine(point(-.5f, .0f));
+        device->DrawLine(point(.0, .5f));
+
+        /*
+        device->SetPoint({0.0f, 0.0f});    
+        device->DrawLine({.5f, .5f});
+        device->DrawLine({.5f, -.5f});
+        device->DrawLine({0.0f, 0.0f});
+        */
+
+        /*
+        auto point = [=](float x, float y) { return AudioRender::Point{x, y}; };
+        device->SetPoint(point(.0f, .0f));
+        device->DrawLine(point(.0, .5f));
+        device->DrawLine(point(.5f, .0));
+        device->DrawLine(point(.0, -.5f));
+        device->DrawLine(point(-.5f, .0f));
+        device->DrawLine(point(.0, .5f));
+        */
+
+        if (!device->WaitSync(1000)) g_running = false;
+        device->Submit();
+    }
+}
+#endif
 
 void rasterRender(AudioRender::IDrawDevice* device)
 {
@@ -197,7 +257,7 @@ void rasterRender(AudioRender::IDrawDevice* device)
     }
     // Keep showing the image
     while (g_running) {
-        device->WaitSync();
+        if (!device->WaitSync(1000)) g_running = false;
         device->Submit();
     }
 }
@@ -222,10 +282,11 @@ void svgRender(AudioRender::IDrawDevice* device)
     float intensity = 0.5f;
     bool keyUpDown = false;
     bool keyDownDown = false;
+    bool keyPDown = false;
+    bool paused = false;
 
     while (g_running) {
-        device->WaitSync();
-
+        
         // Jump to next on space bar press
         bool spacePressed = !spaceDown && (0x8000 & GetKeyState(VK_SPACE));
         spaceDown = (0x8000 & GetKeyState(VK_SPACE));
@@ -236,8 +297,12 @@ void svgRender(AudioRender::IDrawDevice* device)
         bool keyDownPressed = !keyDownDown && (0x8000 & GetKeyState(VK_DOWN));
         keyDownDown = (0x8000 & GetKeyState(VK_DOWN));
 
+        bool keyPPressed = !keyPDown && (0x8000 & GetKeyState('P'));
+        keyPDown = (0x8000 & GetKeyState('P'));
+
         if (0x8000 & GetKeyState(0x51)) {  // 'Q'
             g_running = false;
+            continue;
         }
 
         if (keyUpPressed) {
@@ -247,10 +312,19 @@ void svgRender(AudioRender::IDrawDevice* device)
             intensity -= 0.1f;
             if (intensity <= 0.1f) intensity = 0.1f;
         }
+        if (keyPPressed) {
+            paused = !paused;
+            if (paused) {
+                printf("Paused\n");    
+            } else {
+                printf("Unpaused\n");
+            }
+        }
+
         if (keyUpPressed || keyDownPressed) printf("Intensity %.1f\n", intensity);
 
         unsigned int now = GetTickCount();
-        bool imageSwapped = ts <= now || spacePressed;
+        bool imageSwapped = (ts <= now || spacePressed) && !paused;
         if (imageSwapped) {
             // Swap image every 8 seconds
             ts = now + 8000;
@@ -258,8 +332,11 @@ void svgRender(AudioRender::IDrawDevice* device)
             if (!vectorizer->loadImage(SVGsamples[imgidx])) {
                 vectorizer = nullptr;
                 LOGE("Failed to load \"%s\". %s", SVGsamples[imgidx], GetLastErrorString());
+            } else {
+                printf("# %s\n", SVGsamples[imgidx]);
             }
             imgidx = (imgidx + 1) % ARRAYSIZE(SVGsamples);
+            
         }
         if (imageSwapped || keyUpPressed || keyDownPressed) {
             device->Begin();
@@ -268,7 +345,8 @@ void svgRender(AudioRender::IDrawDevice* device)
                 vectorizer->drawImage(device, 1.8f);
             }
         }
-
+        
+        if (!device->WaitSync(1000)) g_running = false;
         device->Submit();
     }
 }
@@ -291,4 +369,3 @@ BOOL WINAPI ctrlHandler(DWORD dwCtrlType)
     g_running = false;
     return TRUE;
 }
-

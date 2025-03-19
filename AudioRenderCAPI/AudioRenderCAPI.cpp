@@ -104,7 +104,7 @@ __declspec(dllexport) void audioRender_DeviceFree(audioRender_DrawDevice* device
 __declspec(dllexport) bool audioRender_WaitSync(audioRender_DrawDevice* device)
 {
     if (device == nullptr) return false;
-    return getDrawDevice(device)->WaitSync();
+    return getDrawDevice(device)->WaitSync(3000);
 }
 
 __declspec(dllexport) void audioRender_Begin(audioRender_DrawDevice* device)

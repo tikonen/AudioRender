@@ -10,3 +10,4 @@ void __LOG(const char* mod, _Printf_format_string_ const char* szFormat, ...);
 
 const char* HResultToString(long result);
 const char* GetLastErrorString();
+

@@ -292,8 +292,9 @@ void SimulatorRenderView::WinMainProc()
     m_frameSyncPoint.close();
 }
 
-bool SimulatorRenderView::WaitSync()
+bool SimulatorRenderView::WaitSync(int timeoutms)
 {
+    (void)timeoutms;
     std::unique_lock<std::mutex> lock(m_mutex);
     m_frameSyncPoint.sync(lock);
 
