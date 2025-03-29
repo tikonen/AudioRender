@@ -3,6 +3,7 @@
 #include <vector>
 #include <queue>
 #include <mutex>
+#include <array>
 #include <condition_variable>
 
 #include "IAudioGenerator.hpp"
@@ -13,6 +14,9 @@ namespace AudioRender
 class AudioGraphicsBuilder : public IAudioGenerator, public DrawDevice
 {
 public:
+    AudioGraphicsBuilder();
+    ~AudioGraphicsBuilder();
+
     // how large range is used ]0, 1[, useful for flipping an axis or a with DAC that might need some margin due to biasing (it's 0 is not exactly 0 volts so
     // some clipping will happen on extreme values.)
     void setScale(float xscale, float yscale)
@@ -22,6 +26,7 @@ public:
     }
 
     void setFixedRenderingRate(bool fixedRate) { m_fixedRate = fixedRate; }    
+    void setIdleBox(bool idleBox) { m_idleBox = idleBox; }
 
     //==========================================================
     // IDrawDevice interface
@@ -52,17 +57,24 @@ private:
     int EncodeSync(const GraphicsPrimitive& p, EncodeCtx& ctx);
     bool AddToBuffer(float x, float y, EncodeCtx& ctx);
     void QueueBuffer();
+    void FillIdle(EncodeCtx& ctx);
 
     // Current buffer that is used to build rendering data
     std::vector<uint8_t> m_audioBuffer;
     int m_bufferIdx = 0;
     int m_bufferSize;
     bool m_fixedRate = false;
+    bool m_idleBox = false;
 
     // Buffers that are ready for rendering and can be picked up by the FillSampleBuffer
-    std::queue<std::vector<uint8_t>> m_renderQueue;
-    std::mutex m_renderMutex;
-    std::condition_variable m_frameCv;
+    //std::queue<std::vector<uint8_t>> m_renderQueue;
+    std::array<std::vector<uint8_t>, 128> m_renderBuffer;
+    uint32_t m_readIdx;
+    uint32_t m_writeIdx;
+    //std::mutex m_renderMutex;
+    HANDLE m_frameEvent;
+    uint32_t m_bufferCount;
+    //std::condition_variable m_frameCv;
 
     enum RenderSampleType {
         SampleTypeUnknown,

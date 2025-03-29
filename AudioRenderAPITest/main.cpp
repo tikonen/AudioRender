@@ -84,21 +84,20 @@ int main(int argc, char* argv[])
             audioGenerator->setScale(-0.95f, -0.95f);
         }
         audioDevice.SetGenerator(audioGenerator);
-        audioDevice.Start();
+        if (audioDevice.Start()) {
+            SetConsoleCtrlHandler(ctrlHandler, TRUE);
+            LOG("Ctrl-C to break.");
 
-        SetConsoleCtrlHandler(ctrlHandler, TRUE);
-        LOG("Ctrl-C to break.");
+            AudioRender::IDrawDevice* drawDevice = audioGenerator.get();
+            mainLoop(demoMode, drawDevice);
 
-        AudioRender::IDrawDevice* drawDevice = audioGenerator.get();
-        mainLoop(demoMode, drawDevice);
-
-        LOG("Stopping");
-        audioDevice.Stop();
+            LOG("Stopping");
+            audioDevice.Stop();
+        }
     } else if (result.count("I")) {
         auto intDevice = std::make_shared<AudioRender::IntegratorDevice>();
 
         if (!intDevice->Connect()) {
-
             LOG("Cannot connect to integrator");
             DWORD err = intDevice->lastError();
             if (err) {
@@ -136,17 +135,17 @@ int main(int argc, char* argv[])
         auto audioGenerator = std::make_shared<ToneSampleGenerator>(frequency);
         audioDevice.SetGenerator(audioGenerator);
         LOG("Playing %0.1fkHz test tone", frequency / 1000.f);
-        audioDevice.Start();
+        if (audioDevice.Start()) {
+            SetConsoleCtrlHandler(ctrlHandler, TRUE);
+            LOG("Ctrl-C to break.");
 
-        SetConsoleCtrlHandler(ctrlHandler, TRUE);
-        LOG("Ctrl-C to break.");
+            while (g_running) {
+                Sleep(100);
+            }
 
-        while (g_running) {
-            Sleep(1000);
+            LOG("Stopping");
+            audioDevice.Stop();
         }
-
-        LOG("Stopping");
-        audioDevice.Stop();
     } else {
         printf("%s\n", options.help().c_str());
         return 1;
@@ -191,22 +190,23 @@ void basicRender(AudioRender::IDrawDevice* device)
     // Basic rendering loop
     float i = 0;
     const float pi = 3.414f;
- 
+
     while (g_running) {
         device->Begin();
 
+#if 0
         device->SetIntensity(0.3f);
         device->SetPoint({0.0, 0.0});
         device->DrawCircle(0.5);
-
-        const float rad = i++ / 360.f * pi;        
+#endif
+        const float rad = i++ / 360.f * pi;
         const float sinr = sin(rad);
         const float cosr = cos(rad);
         auto point = [=](float x, float y) { return AudioRender::Point{cosr * x - sinr * y, sinr * x + cosr * y}; };
-        //device->SetIntensity(0.25f);
+        // device->SetIntensity(0.25f);
         device->SetIntensity(0.25f);
-        device->SetPoint(point(.0f, .0f));
-        //device->SetPoint(point(.0, .5f));
+        // device->SetPoint(point(.0f, .0f));
+        device->SetPoint(point(.0, .5f));
         device->DrawLine(point(.0f, .5f));
         device->DrawLine(point(.5f, .0));
         device->DrawLine(point(.0, -.5f));
@@ -214,7 +214,7 @@ void basicRender(AudioRender::IDrawDevice* device)
         device->DrawLine(point(.0, .5f));
 
         /*
-        device->SetPoint({0.0f, 0.0f});    
+        device->SetPoint({0.0f, 0.0f});
         device->DrawLine({.5f, .5f});
         device->DrawLine({.5f, -.5f});
         device->DrawLine({0.0f, 0.0f});
@@ -286,7 +286,6 @@ void svgRender(AudioRender::IDrawDevice* device)
     bool paused = false;
 
     while (g_running) {
-        
         // Jump to next on space bar press
         bool spacePressed = !spaceDown && (0x8000 & GetKeyState(VK_SPACE));
         spaceDown = (0x8000 & GetKeyState(VK_SPACE));
@@ -315,7 +314,7 @@ void svgRender(AudioRender::IDrawDevice* device)
         if (keyPPressed) {
             paused = !paused;
             if (paused) {
-                printf("Paused\n");    
+                printf("Paused\n");
             } else {
                 printf("Unpaused\n");
             }
@@ -336,7 +335,6 @@ void svgRender(AudioRender::IDrawDevice* device)
                 printf("# %s\n", SVGsamples[imgidx]);
             }
             imgidx = (imgidx + 1) % ARRAYSIZE(SVGsamples);
-            
         }
         if (imageSwapped || keyUpPressed || keyDownPressed) {
             device->Begin();
@@ -345,7 +343,7 @@ void svgRender(AudioRender::IDrawDevice* device)
                 vectorizer->drawImage(device, 1.8f);
             }
         }
-        
+
         if (!device->WaitSync(1000)) g_running = false;
         device->Submit();
     }

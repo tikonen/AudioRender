@@ -54,8 +54,7 @@ void SVGImage::drawImage(IDrawDevice* device, float scale, float stepSize, float
 void SVGImage::vertex(float x, float y, bool first)
 {
     const AudioRender::Point point{(x - m_hw) * m_xScale + m_xoff, (y - m_hh) * m_yScale + m_yoff};
-
-    assert(m_device != NULL);
+    
     if (first) {
         m_device->SetPoint(point);
     } else {

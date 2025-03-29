@@ -18,6 +18,8 @@
 #include <math.h>
 #include <limits.h>
 
+#include <vector>
+
 #include "IAudioGenerator.hpp"
 
 class ToneSampleGenerator : public IAudioGenerator
@@ -28,8 +30,8 @@ public:
 
     //==========================================================
     // IAudioGenerator interface
-    bool IsEOF() override { return (m_SampleQueue == nullptr); };
-    UINT32 GetBufferLength() override { return (m_SampleQueue != nullptr ? m_SampleQueue->BufferSize : 0); };
+    bool IsEOF() override { return (m_sampleQueue.size() == m_sampleIdx); };
+    UINT32 GetBufferLength() override { return (m_sampleQueue.size() != 0 ? (UINT32)m_sampleQueue[0].size() : 0); };
     void Flush() override;
 
     HRESULT Initialize(UINT32 FramesPerPeriod, WAVEFORMATEX* wfx) override;
@@ -42,27 +44,6 @@ private:
 
     unsigned int m_frequency;
 
-    struct RenderBuffer {
-        UINT32 BufferSize;
-        UINT32 BytesFilled;
-        BYTE* Buffer;
-        RenderBuffer* Next;
-
-        RenderBuffer()
-            : BufferSize(0)
-            , BytesFilled(0)
-            , Buffer(nullptr)
-            , Next(nullptr)
-        {
-        }
-
-        ~RenderBuffer()
-        {
-            delete Buffer;
-            Buffer = nullptr;
-        }
-    };
-
-    RenderBuffer* m_SampleQueue;
-    RenderBuffer** m_SampleQueueTail;
+    std::vector<std::vector<BYTE>> m_sampleQueue;
+    int m_sampleIdx;
 };

@@ -20,7 +20,7 @@
 #include <mfapi.h>
 #include <AudioClient.h>
 #include <mmdeviceapi.h>
-#include <wrl.h>
+//#include <wrl.h>
 
 #include <SmartPtr.hpp>
 
@@ -28,37 +28,38 @@
 #include "IAudioGenerator.hpp"
 #include "DeviceState.hpp"
 
-using namespace winrt::Windows::Media::Devices;
-using namespace winrt::Windows::Storage::Streams;
-using namespace Microsoft::WRL;
-
-// enum class ContentType { ContentTypeTone, ContentTypeFile };
+// using namespace winrt::Windows::Media::Devices;
+// using namespace winrt::Windows::Storage::Streams;
+// using namespace Microsoft::WRL;
 
 // User Configurable Arguments for Scenario
 struct DEVICEPROPS {
     bool IsHWOffload;
     bool IsBackground;
-    bool IsRawSupported;
-    bool IsRawChosen;
+    // bool IsRawSupported;
+    // bool IsRawChosen;
     bool IsLowLatency;
     REFERENCE_TIME hnsBufferDuration;
-    // IRandomAccessStream ContentStream;
 };
 
 // Primary WASAPI Renderering Class
-class WASAPIRenderer : public RuntimeClass<RuntimeClassFlags<ClassicCom>, FtmBase, IActivateAudioInterfaceCompletionHandler>
+class WASAPIRenderer
 {
 public:
     WASAPIRenderer();
+    ~WASAPIRenderer();
 
     void SetGenerator(std::shared_ptr<IAudioGenerator> generator) { m_toneSource = generator; }
 
-    HRESULT SetDeviceId(winrt::hstring deviceId);
+    HRESULT SetDevice(SmartPtr<IMMDevice> device);
     HRESULT SetProperties(DEVICEPROPS props);
-    HRESULT InitializeAudioDeviceAsync();
-    HRESULT StartPlaybackAsync();
-    HRESULT StopPlaybackAsync();
-    HRESULT PausePlaybackAsync();
+    HRESULT InitializeAudioDevice();
+    // HRESULT StartPlaybackAsync();
+    HRESULT StartPlayback();
+    // HRESULT StopPlaybackAsync();
+    HRESULT StopPlayback();
+    // HRESULT PausePlaybackAsync();
+    HRESULT PausePlayback();
 
     double GetPeriodInSeconds();
 
@@ -66,11 +67,10 @@ public:
     DeviceStateChangedEvent& GetDeviceStateEvent() { return m_DeviceStateChanged; };
 
     // IActivateAudioInterfaceCompletionHandler
-    STDMETHOD(ActivateCompleted)(IActivateAudioInterfaceAsyncOperation* operation);
+    // STDMETHOD(ActivateCompleted)(IActivateAudioInterfaceAsyncOperation* operation);
 
 private:
-    ~WASAPIRenderer();
-
+#if 0
     class AsyncCallback : public IUnknownBase<IMFAsyncCallback>
     {
     public:
@@ -98,40 +98,46 @@ private:
         DWORD _dwQueueID;
     };
 
-    AsyncCallback m_startPlaybackCb;
-    AsyncCallback m_stopPlaybackCb;
-    AsyncCallback m_pausePlaybackCb;
-    AsyncCallback m_sampleReadyCb;
+#endif
+    // AsyncCallback m_startPlaybackCb;
+    // AsyncCallback m_stopPlaybackCb;
+    // AsyncCallback m_pausePlaybackCb;
+    // AsyncCallback m_sampleReadyCb;
 
-    HRESULT OnStartPlayback(IMFAsyncResult* pResult);
-    HRESULT OnStopPlayback(IMFAsyncResult* pResult);
-    HRESULT OnPausePlayback(IMFAsyncResult* pResult);
-    HRESULT OnSampleReady(IMFAsyncResult* pResult);
+    // HRESULT OnStartPlayback(IMFAsyncResult* pResult);
+    // HRESULT OnStopPlayback(IMFAsyncResult* pResult);
+    // HRESULT OnPausePlayback(IMFAsyncResult* pResult);
+    // HRESULT OnSampleReady(IMFAsyncResult* pResult);
 
     HRESULT ConfigureDeviceInternal();
-    HRESULT ValidateBufferValue();
+    // HRESULT ValidateBufferValue();
     HRESULT OnAudioSampleRequested(bool IsSilence = false);
     HRESULT ConfigureSource();
     UINT32 GetBufferFramesPerPeriod();
 
     HRESULT GetToneSample(UINT32 FramesAvailable);
 
+    void RenderLoop();
+    static void RenderLoopThreadMain(WASAPIRenderer* _this);
+
 private:
-    winrt::hstring m_DeviceIdString;
+    std::thread m_renderThread;
     UINT32 m_BufferFrames;
     HANDLE m_SampleReadyEvent;
-    MFWORKITEM_KEY m_SampleReadyKey;
-    std::mutex m_mutex;
+    // MFWORKITEM_KEY m_SampleReadyKey;
+    // std::mutex m_mutex;
 
     WAVEFORMATEX* m_MixFormat;
+    /*
     UINT32 m_DefaultPeriodInFrames;
     UINT32 m_FundamentalPeriodInFrames;
     UINT32 m_MaxPeriodInFrames;
     UINT32 m_MinPeriodInFrames;
     UINT32 m_currentSharedPeriodInFrames;
-
-    SmartPtr<IAudioClient3> m_AudioClient;
+    */
     SmartPtr<IAudioRenderClient> m_AudioRenderClient;
+    SmartPtr<IAudioClient3> m_AudioClient;
+    SmartPtr<IMMDevice> m_device;
     SmartPtr<IMFAsyncResult> m_SampleReadyAsyncResult;
 
     DeviceStateChangedEvent m_DeviceStateChanged;

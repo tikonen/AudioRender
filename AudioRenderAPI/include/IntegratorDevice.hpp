@@ -1,6 +1,9 @@
 #pragma once
 #include <Windows.h>
 
+#include <memory>
+#include <string>
+
 #include <ftprotocol.h>
 #include "DrawDevice.hpp"
 

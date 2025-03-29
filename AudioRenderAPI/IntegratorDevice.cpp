@@ -14,11 +14,16 @@
 // {b436698d-63c5-4c12-9a20-f8750d5060c6}
 DEFINE_GUID(GUID_DEVINTERFACE_FAKETREX, 0xb436698d, 0x63c5, 0x4c12, 0x9a, 0x20, 0xf8, 0x75, 0x0d, 0x50, 0x60, 0xc6);
 
+#define MIN(a, b) ((a) > (b) ? (b) : (a))
+#define MAX(a, b) ((a) < (b) ? (b) : (a))
+#define CLAMP(x, minx, maxx) MAX(minx, MIN(maxx, x))
+
 namespace AudioRender
 {
 #define INTEG_R 10e3f
 #define INTEG_C 47e-9f
-#define INTEG_STABILIZATION_TIME_US 50
+#define INTEGX_C 15e-9f
+#define INTEG_STABILIZATION_TIME_US 20
 #define MAX_PACKETS_PER_FRAME 6
 #define SPEED_SCALE 4500
 #define INTEG_SCALE_FACTOR 0.25f
@@ -43,10 +48,17 @@ static float norm(float x0, float y0, float x1, float y1)
 }
 
 // Vo = -Vd * t / RC
-static float vOutEst(float Vd, float t) { return -Vd * t / (INTEG_C * INTEG_R); }
+// static float vOutEst(float Vd, float t) { return -Vd * t / (INTEG_C * INTEG_R); }
 
 // Vd = -RC * Vo / t
 static float vDeltaEst(float Vo, float t) { return (INTEG_C * INTEG_R * -Vo) / t; }
+static float vDeltaEstX(float Vo, float t) { return (INTEGX_C * INTEG_R * -Vo) / t; }
+static float vDeltaEstY(float Vo, float t) { return (INTEG_C * INTEG_R * -Vo) / t; }
+
+// t = -RC * Vo / Vd
+static float tEst(float Vo, float Vd) { return (INTEG_C * INTEG_R * -Vo) / Vd; }
+static float tEstX(float Vo, float Vd) { return (INTEGX_C * INTEG_R * -Vo) / Vd; }
+static float tEstY(float Vo, float Vd) { return (INTEG_C * INTEG_R * -Vo) / Vd; }
 
 #define INTEG_DAC_MAX ((1U << 12) - 1)
 #define INTEG_DAC_REF (INTEG_DAC_MAX / 2)
@@ -55,7 +67,7 @@ static float vDeltaEst(float Vo, float t) { return (INTEG_C * INTEG_R * -Vo) / t
 static unsigned int dacMap(float c)
 {
     unsigned int v = static_cast<unsigned int>(roundf((c + 0.5f) * INTEG_DAC_MAX));
-    return std::clamp(v, 0U, INTEG_DAC_MAX);
+    return CLAMP(v, 0U, INTEG_DAC_MAX);
 }
 
 static void setFramePacketSize(FTPacket* packet, int samplec)
@@ -84,18 +96,48 @@ static void pointSample(FTSample& sample, float x0, float y0, bool reset)
     sample.wait = INTEG_STABILIZATION_TIME_US;  // stabilization time
 }
 
-static void pathSample(FTSample& sample, float xref, float yref, float x0, float y0, float x1, float y1, float speed)
+bool fastPathSample(FTSample& sample, float xref, float yref, float x0, float y0, float x1, float y1)
 {
-    const float t = SPEED_SCALE * norm(x0, y0, x1, y1) * 1e-6f * speed;
-    const float Vdx = vDeltaEst(x1 - x0, t);
-    const float Vdy = vDeltaEst(y1 - y0, t);
+    float xd = x1 - x0;
+    float yd = y1 - y0;
+        
+    const float txus = abs(tEstX(xd, 0.5f - xref));
+    const float tyus = abs(tEstY(yd, 0.5f - yref));
+
+    float tus = MAX(txus, tyus);
+    
+    if (tus < 1e-6f) return false;
+
+    const float Vdx = vDeltaEstX(x1 - x0, tus);
+    const float Vdy = vDeltaEstY(y1 - y0, tus);
+
+    tus *= 1e6f;
 
     sample.resetx = 0;
     sample.x = dacMap(xref + Vdx);
     sample.resety = 0;
     sample.y = dacMap(yref + Vdy);
     sample.nodac = 0;
-    sample.wait = (uint16_t)(t * 1e6f);  // TODO check max value
+    sample.wait = CLAMP((int)tus, 1, FT_SAMPLE_MAX_WAIT_US);
+    return true;
+}
+
+
+bool pathSample(FTSample& sample, float xref, float yref, float x0, float y0, float x1, float y1, float speed)
+{
+    const float tus = roundf(SPEED_SCALE * norm(x0, y0, x1, y1) * speed);
+    if (tus < 1.f) return false;
+
+    const float Vdx = vDeltaEstX(x1 - x0, tus * 1e-6f);
+    const float Vdy = vDeltaEstY(y1 - y0, tus * 1e-6f);
+
+    sample.resetx = 0;
+    sample.x = dacMap(xref + Vdx);
+    sample.resety = 0;
+    sample.y = dacMap(yref + Vdy);
+    sample.nodac = 0;
+    sample.wait = CLAMP((int)tus, 1, FT_SAMPLE_MAX_WAIT_US);
+    return true;
 }
 
 void IntegratorGraphicsBuilder::EncodeSamples(const std::vector<GraphicsPrimitive>& ops)
@@ -123,6 +165,31 @@ int IntegratorGraphicsBuilder::encodeSync(float x, float y, EncodeCtx& ctx)
     int samplec = 0;
     FTSample sample;
 
+#if 1
+    ctx.xref = 0;
+    ctx.yref = 0;
+
+    ctx.syncPoint = true;
+
+    // Reset the integrator to center
+    pointSample(sample, 0, 0, true);
+    m_samples.emplace_back(sample);
+    samplec++;
+
+    // Lock integrator reference and wait a few us to stabilize
+    controlSample(sample, false, true, 4);
+    m_samples.emplace_back(sample);
+    samplec++;
+
+    if (x != 0 || y != 0) {
+        // move the beam as fast as possible to the desired starting location
+        if (fastPathSample(sample, ctx.xref, ctx.yref, ctx.xref, ctx.yref, m_xScale * x, m_yScale * y)) {
+            m_samples.emplace_back(sample);
+            samplec++;
+        }
+    }
+#else
+
     ctx.xref = x * m_xScale;
     ctx.yref = y * m_yScale;
     ctx.syncPoint = true;
@@ -136,32 +203,32 @@ int IntegratorGraphicsBuilder::encodeSync(float x, float y, EncodeCtx& ctx)
     controlSample(sample, false, true, 4);
     m_samples.emplace_back(sample);
     samplec++;
-
+#endif
     return samplec;
 }
 
-int IntegratorGraphicsBuilder::EncodeSync(const GraphicsPrimitive& p, EncodeCtx& ctx)
-{
-    return encodeSync(p.p.x, p.p.y, ctx);
+int IntegratorGraphicsBuilder::EncodeSync(const GraphicsPrimitive& p, EncodeCtx& ctx) 
+{ 
+    return encodeSync(p.p.x, p.p.y, ctx); 
 }
 
 int IntegratorGraphicsBuilder::EncodeLine(const GraphicsPrimitive& p, EncodeCtx& ctx)
 {
-    FTSample sample;
-
-    ctx.syncPoint = false;
-
-    pathSample(sample, ctx.xref, ctx.yref, m_xScale * p.p.x, m_yScale * p.p.y, m_xScale * p.toPoint.x, m_yScale * p.toPoint.y, p.intensity);
-    m_samples.emplace_back(sample);    
-
-    return 1;
+    FTSample sample;    
+    
+    if (pathSample(sample, ctx.xref, ctx.yref, m_xScale * p.p.x, m_yScale * p.p.y, m_xScale * p.toPoint.x, m_yScale * p.toPoint.y, p.intensity)) {
+        ctx.syncPoint = false;
+        m_samples.emplace_back(sample);
+        return 1;
+    }
+    return 0;
 }
 
 int IntegratorGraphicsBuilder::EncodeCircle(const GraphicsPrimitive& p, EncodeCtx& ctx)
 {
     const float CircleSegmentMultiplier = 100.0f;  // how many segments in unit circle
     const float Pi = 3.14159f;
-    const int stepCount = (int)std::ceil(CircleSegmentMultiplier * p.r * p.intensity);
+    const int stepCount = (int)ceil(CircleSegmentMultiplier * p.r * p.intensity);
     const float angleStep = Pi * 2 / stepCount;
 
     Point prev;
@@ -261,8 +328,8 @@ bool IntegratorDevice::receivePacket(FTPacket* inpacket)
 
 void IntegratorDevice::SetFrameDuration(int ms)
 {
-    ms = (int)(std::ceil(ms / 5.0f) * 5);
-    m_frameDurationMs = std::clamp(ms, 5, 80);
+    ms = (int)(ceilf(ms / float(FT_FRAME_FPS_MUL_MS)) * FT_FRAME_FPS_MUL_MS);
+    m_frameDurationMs = CLAMP(ms, FT_FRAME_FPS_MUL_MS, FT_FRAME_FPS_MUL_MS * FT_SAMPLE_MAX_FPS);
 }
 
 void IntegratorDevice::Submit()
@@ -287,7 +354,7 @@ void IntegratorDevice::Submit()
 
         // fill a packet with samples
         int samplec = 0;
-        for (; samplec < FT_MAX_SAMPLES && si < m_samples.size(); si++, samplec++) {
+        for (; samplec < FT_MAX_PACKET_SAMPLES && si < m_samples.size(); si++, samplec++) {
             packet->frame.samples[samplec] = m_samples[si];
         }
         setFramePacketSize(packet, samplec);
@@ -299,7 +366,7 @@ void IntegratorDevice::Submit()
             packet->frame.eof = 1;  // last packet, end of frame
             done = true;
         }
-        packet->frame.fps = m_frameDurationMs / 5;
+        packet->frame.fps = m_frameDurationMs / FT_FRAME_FPS_MUL_MS;
 
         sendPacket(packet);
 

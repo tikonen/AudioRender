@@ -28,7 +28,7 @@ target_link_libraries(${_target} nanosvg) # Vector image loading
 
 # WASAPI Audio
 target_link_libraries(${_target} "Mfplat.lib")
-target_link_libraries(${_target} "windowsapp.lib")
+target_link_libraries(${_target} "Avrt.lib")
 
 # WinUSB
 target_link_libraries(${_target} "winusb.lib")

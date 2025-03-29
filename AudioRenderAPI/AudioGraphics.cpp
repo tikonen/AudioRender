@@ -7,19 +7,74 @@
 #include <Log.hpp>
 #include <mfapi.h>
 
+#define QUEUE_WATERMARK 3
+
 namespace AudioRender
 {
+// Generates steps to draw a box following edges
+void buildFrameSteps(float steps[][2], int count)
+{
+    const float min = 0.0f;
+    const float max = 1.0f;
+    int s = 0;
+    const float step = (max - min) / (count / 4);
+    for (int i = 0; i < count / 4; i++, s++) {
+        steps[s][0] = min;
+        steps[s][1] = step * i + min;
+        steps[s + count / 2][0] = max;
+        steps[s + count / 2][1] = max - step * i + min;
+    }
+    for (int i = 0; i < count / 4; i++, s++) {
+        steps[s][0] = step * i + min;
+        steps[s][1] = max;
+        steps[s + count / 2][0] = max - step * i + min;
+        steps[s + count / 2][1] = min;
+    }
+}
+
+#define FRAMESTEPCOUNT 64
+static float idleFrameSteps[FRAMESTEPCOUNT][2];
+static bool idleFrameStepsInitialized = false;
+
+AudioGraphicsBuilder::AudioGraphicsBuilder()
+    : m_readIdx(0)
+    , m_writeIdx(0)
+    , m_bufferCount(0)
+    , m_bufferSize(0)
+    , m_wfx{0}
+{
+    m_frameEvent = CreateEventEx(nullptr, nullptr, 0, EVENT_ALL_ACCESS);
+    if (!idleFrameStepsInitialized) {
+        buildFrameSteps(idleFrameSteps, FRAMESTEPCOUNT);
+        idleFrameStepsInitialized = true;
+    }
+}
+
+AudioGraphicsBuilder::~AudioGraphicsBuilder()
+{
+    if (m_frameEvent) CloseHandle(m_frameEvent);
+}
+
 bool AudioGraphicsBuilder::WaitSync(int timeout)
-{    
+{
+    if (m_writeIdx - m_readIdx > QUEUE_WATERMARK) {
+        DWORD res = WaitForSingleObject(m_frameEvent, timeout ? timeout : INFINITE);
+
+        if (res != WAIT_OBJECT_0) return false;
+    }
+    return true;
+
+#if 0
     // Consider sync completed when there is one or less ready data block waiting for rendering
-    std::unique_lock<std::mutex> lock(m_renderMutex);    
-    auto pred = [&]() { return m_renderQueue.size() <= 1; };
+    std::unique_lock<std::mutex> lock(m_renderMutex);
+    auto pred = [&]() { return m_renderQueue.size() <= QUEUE_WATERMARK; };
     if (timeout != 0) {
         m_frameCv.wait_for(lock, std::chrono::milliseconds(timeout), pred);
     } else {
         m_frameCv.wait(lock, pred);
     }
-    return m_renderQueue.size() <= 1;    
+    return m_renderQueue.size() <= QUEUE_WATERMARK;
+#endif
 }
 
 void AudioGraphicsBuilder::Submit() { EncodeAudio(m_operations); }
@@ -36,13 +91,13 @@ inline float Convert<float>(float Value)
 template <>
 inline short Convert<short>(float Value)
 {
-    return (short)(Value * _I16_MAX);
+    return (short)roundf(Value * _I16_MAX);
 };
 
 template <>
 inline int32_t Convert<int32_t>(float Value)
 {
-    return (int32_t)(Value * _I32_MAX);
+    return (int32_t)roundf(Value * _I32_MAX);
 };
 
 bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
@@ -51,13 +106,12 @@ bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
     if (m_sampleType == RenderSampleType::SampleType16BitPCM) {
         short* pcmbuffer = static_cast<short*>(buffer);
         pcmbuffer[0] = Convert<short>(x);  // left channel
-        pcmbuffer[1] = Convert<short>(y);  // right channel
-        m_bufferIdx += sizeof(short) * 2;
+        pcmbuffer[1] = Convert<short>(y);  // right channel        
     } else if (m_sampleType == RenderSampleType::SampleType24BitPCM) {
         uint8_t* pcmbuffer = static_cast<uint8_t*>(buffer);
         int32_t v;
-        
-        v= Convert<int32_t>(x) >> 8;
+
+        v = Convert<int32_t>(x) >> 8;
         pcmbuffer[0] = v & 0xFF;
         pcmbuffer[1] = (v >> 8) & 0xFF;
         pcmbuffer[2] = (v >> 16) & 0xFF;
@@ -65,15 +119,13 @@ bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
         v = Convert<int32_t>(y) >> 8;
         pcmbuffer[3] = v & 0xFF;
         pcmbuffer[4] = (v >> 8) & 0xFF;
-        pcmbuffer[5] = (v >> 16) & 0xFF;
-        
-        m_bufferIdx += 3 * 2;
+        pcmbuffer[5] = (v >> 16) & 0xFF;        
     } else if (m_sampleType == RenderSampleType::SampleTypeFloat) {
         float* fltbuffer = static_cast<float*>(buffer);
         fltbuffer[0] = Convert<float>(x);  // left channel
-        fltbuffer[1] = Convert<float>(y);  // right channel
-        m_bufferIdx += sizeof(float) * 2;
+        fltbuffer[1] = Convert<float>(y);  // right channel        
     }
+    m_bufferIdx += m_wfx.nBlockAlign;
     assert(m_bufferIdx <= m_bufferSize);
 
     if (m_bufferIdx >= m_bufferSize) {
@@ -85,15 +137,24 @@ bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
 
 void AudioGraphicsBuilder::QueueBuffer()
 {
+    m_bufferCount++;
+
     if (m_bufferIdx < m_bufferSize) {
         // zero out remaining bytes
         memset(m_audioBuffer.data() + m_bufferIdx, 0, m_bufferSize - m_bufferIdx);
     }
 
+    /*
+    static FILE* out = nullptr;
+    if (!out) {
+        out = fopen("out.dat", "wb");
+    }
+    fwrite(m_audioBuffer.data(), 1, m_bufferSize, out);
+    */
+
     // audiorender buffer is full, submit it for rendering
-    std::lock_guard<std::mutex> lock(m_renderMutex);
-    m_renderQueue.emplace(std::move(m_audioBuffer));
-    m_audioBuffer = std::vector<uint8_t>(m_bufferSize);
+    m_renderBuffer[m_writeIdx % m_renderBuffer.size()] = m_audioBuffer;
+    m_writeIdx++;
     m_bufferIdx = 0;
 }
 
@@ -103,7 +164,7 @@ int AudioGraphicsBuilder::EncodeCircle(const GraphicsPrimitive& p, EncodeCtx& ct
 {
     const float CircleSegmentMultiplier = 50.0f;  // how many segments in unit circle
     const float Pi = 3.14159f;
-    const int stepCount = std::lround(CircleSegmentMultiplier * p.r * p.intensity * SpeedMultiplier);
+    const int stepCount = lround(CircleSegmentMultiplier * p.r * p.intensity * SpeedMultiplier);
     const float angleStep = Pi * 2 / stepCount;
 
     for (int i = 0; i < stepCount + 1; i++) {
@@ -121,7 +182,7 @@ int AudioGraphicsBuilder::EncodeLine(const GraphicsPrimitive& p, EncodeCtx& ctx)
     const float vx = p.toPoint.x - p.p.x;
     const float vy = p.toPoint.y - p.p.y;
     const float l = sqrtf(vx * vx + vy * vy);
-    int stepCount = std::lround(LineSegmentMultiplier * l * p.intensity * SpeedMultiplier + 0.5f);
+    int stepCount = lround(LineSegmentMultiplier * l * p.intensity * SpeedMultiplier + 0.5f);
 
     // If syncpoint has not been set don't draw the first dot as it was drawn already on previous
     // encode call.
@@ -143,8 +204,37 @@ int AudioGraphicsBuilder::EncodeSync(const GraphicsPrimitive& p, EncodeCtx& ctx)
     return 1;
 }
 
+// Keep beam out from center by drawing a box around screen
+void AudioGraphicsBuilder::FillIdle(EncodeCtx& ctx)
+{
+    static unsigned int step = 0;
+
+    while (m_bufferIdx < m_bufferSize && m_bufferIdx != 0) {
+        float x = idleFrameSteps[step % FRAMESTEPCOUNT][0];
+        float y = idleFrameSteps[step % FRAMESTEPCOUNT][1];
+        step++;
+        AddToBuffer(x, y, ctx);
+    }
+}
+
 void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops)
 {
+#if 0
+    // Sawtooth signal
+    EncodeCtx ctx{0};    
+
+    // Steps can be calculated for a given frequency
+    //int freq = 120;
+    //int steps = m_wfx.nSamplesPerSec / freq / 2;
+
+    int steps = 200; // 240 gives even buffer size for 100Hz @ 48000
+    for (int i = 0; i < steps; i++) {
+        AddToBuffer(0.8f * i / float(steps), 0.8f * i / float(steps), ctx);
+    }
+    for (int i = steps; i > 0; i--) {
+        AddToBuffer(0.8f * i / float(steps), 0.8f * i / float(steps), ctx);
+    }
+#else
     int points = 0;
     EncodeCtx ctx{0};
 
@@ -159,14 +249,20 @@ void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops
                 break;
         }
     }
-
+    
     if (m_fixedRate) {
         // This mode submits always buffers for rendering, even when there is
         // not enough data in the buffer. This limits rendering speed.
-        if (m_bufferIdx < m_bufferSize) {
-            QueueBuffer();
+        if (m_bufferIdx > 0) {
+            if (m_idleBox) {
+                FillIdle(ctx);
+            } else {
+                // send partially completed buffer
+                QueueBuffer();
+            }
         }
     }
+#endif
 }
 
 //  Determine IEEE Float or PCM samples based on media type
@@ -197,15 +293,15 @@ HRESULT AudioGraphicsBuilder::Initialize(UINT32 FramesPerPeriod, WAVEFORMATEX* w
         // must be stereo to encode X and Y
         return E_NOTIMPL;
     }
-    const unsigned int Frequency = 50;
+    // const unsigned int Frequency = 50;
 
     // Calculate buffer size and number of buffers needed for this frequency (framerate) and samplerate
     int renderBufferSize = FramesPerPeriod * m_wfx.nBlockAlign;
-    long renderDataLength = (m_wfx.nSamplesPerSec / Frequency * m_wfx.nBlockAlign) + (renderBufferSize - 1);
-    int renderBufferCount = renderDataLength / renderBufferSize;
+    // long renderDataLength = (m_wfx.nSamplesPerSec / Frequency * m_wfx.nBlockAlign) + (renderBufferSize - 1);
+    // int renderBufferCount = renderDataLength / renderBufferSize;
 
     // Calculate effective fps
-    int fps = m_wfx.nSamplesPerSec / renderBufferCount / FramesPerPeriod;
+    // int fps = m_wfx.nSamplesPerSec / renderBufferCount / FramesPerPeriod;
 
     m_bufferSize = renderBufferSize;
     m_audioBuffer.resize(m_bufferSize);
@@ -224,28 +320,35 @@ HRESULT AudioGraphicsBuilder::FillSampleBuffer(UINT32 BytesToRead, BYTE* Data)
         return E_POINTER;
     }
 
-    std::lock_guard<std::mutex> lock(m_renderMutex);
-
-    if (m_renderQueue.size() > 0) {
-        const auto& buffer = m_renderQueue.front();
+    if (m_writeIdx - m_readIdx > 0) {
+        const std::vector<uint8_t>& buffer = m_renderBuffer[m_readIdx++ % m_renderBuffer.size()];
         if (BytesToRead > buffer.size()) {
             return E_INVALIDARG;
         }
-        assert(BytesToRead == buffer.size());
+        assert(BytesToRead == m_bufferSize);
         memcpy(Data, buffer.data(), BytesToRead);
-        m_renderQueue.pop();
+
+        /*
+        static FILE* out = nullptr;
+        if (!out) {
+            out = fopen("sout.dat", "wb");
+        }        
+        fwrite(Data, 1, BytesToRead, out);
+        */
+
+    } else {
+        memset(Data, 0, BytesToRead);
     }
 
     // Notify sync if queue is running low.
-    if (m_renderQueue.size() <= 1) m_frameCv.notify_all();
+    if (m_writeIdx - m_readIdx < QUEUE_WATERMARK) SetEvent(m_frameEvent);
 
     return S_OK;
 }
 
 void AudioGraphicsBuilder::Flush()
 {
-    std::lock_guard<std::mutex> lock(m_renderMutex);
-    while (m_renderQueue.size()) m_renderQueue.pop();
+    m_readIdx = m_writeIdx = 0;
     m_bufferIdx = 0;
 }
 

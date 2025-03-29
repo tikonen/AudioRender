@@ -17,20 +17,25 @@
 
 #include "WASAPIRenderer.hpp"
 
-using namespace winrt::Windows::System::Threading;
+// using namespace winrt::Windows::System::Threading;
 
 //
 //  WASAPIRenderer()
 //
 WASAPIRenderer::WASAPIRenderer()
     : m_BufferFrames(0)
-    , m_startPlaybackCb{std::bind(&WASAPIRenderer::OnStartPlayback, this, std::placeholders::_1)}
-    , m_stopPlaybackCb{std::bind(&WASAPIRenderer::OnStopPlayback, this, std::placeholders::_1)}
-    , m_pausePlaybackCb{std::bind(&WASAPIRenderer::OnPausePlayback, this, std::placeholders::_1)}
-    , m_sampleReadyCb{std::bind(&WASAPIRenderer::OnSampleReady, this, std::placeholders::_1)}
-    , m_currentSharedPeriodInFrames(0)
+    //, m_startPlaybackCb{std::bind(&WASAPIRenderer::OnStartPlayback, this, std::placeholders::_1)}
+    //, m_stopPlaybackCb{std::bind(&WASAPIRenderer::OnStopPlayback, this, std::placeholders::_1)}
+    //, m_pausePlaybackCb{std::bind(&WASAPIRenderer::OnPausePlayback, this, std::placeholders::_1)}
+    //, m_sampleReadyCb{std::bind(&WASAPIRenderer::OnSampleReady, this, std::placeholders::_1)}
+    //, m_currentSharedPeriodInFrames(0)
     , m_SampleReadyEvent(NULL)
+    , m_MixFormat(nullptr)
+    , m_DeviceProps{0}
 {
+    m_MixFormat = (WAVEFORMATEX*)malloc(sizeof(WAVEFORMATEX));
+    memset(m_MixFormat, 0, sizeof(WAVEFORMATEX));
+
     // Create events for sample ready or user stop
     m_SampleReadyEvent = CreateEventEx(nullptr, nullptr, 0, EVENT_ALL_ACCESS);
 }
@@ -39,30 +44,121 @@ WASAPIRenderer::~WASAPIRenderer()
 {
     if (m_SampleReadyEvent) CloseHandle(m_SampleReadyEvent);
     m_SampleReadyEvent = NULL;
+    free(m_MixFormat);
 }
 
-//
-//  InitializeAudioDeviceAsync()
-//
-//  Activates the default audio renderer on a asynchronous callback thread.  This needs
-//  to be called from the main UI thread.
-//
-HRESULT WASAPIRenderer::InitializeAudioDeviceAsync()
+
+HRESULT WASAPIRenderer::InitializeAudioDevice()
 {
-    SmartPtr<IActivateAudioInterfaceAsyncOperation> asyncOp;
     HRESULT hr = S_OK;
 
-    // This call must be made on the main UI thread.  Async operation will call back to
-    // IActivateAudioInterfaceCompletionHandler::ActivateCompleted, which must be an agile interface implementation
-    hr = ActivateAudioInterfaceAsync(m_DeviceIdString.data(), __uuidof(IAudioClient3), nullptr, this, &asyncOp);
+    hr = m_device->Activate(__uuidof(IAudioClient3), CLSCTX_ALL, NULL, (void**)&m_AudioClient);
+
     if (FAILED(hr)) {
         m_DeviceStateChanged.SetState(DeviceState::DeviceStateInError, hr, true);
-        LOGE("ActivateAudioInterfaceAsync %s", HResultToString(hr));
+        LOGE("Activate %s", HResultToString(hr));
+        goto exit;
+    }
+
+    if (m_DeviceStateChanged.GetState() != DeviceState::DeviceStateUnInitialized) {
+        hr = E_NOT_VALID_STATE;
+        goto exit;
+    }
+
+    m_DeviceStateChanged.SetState(DeviceState::DeviceStateActivated, S_OK, false);
+
+    // Configure user defined properties
+    hr = ConfigureDeviceInternal();
+    if (FAILED(hr)) {
+        goto exit;
+    }
+
+#if 0
+        // Initialize the AudioClient in Shared Mode with the user specified buffer        
+        if (m_DeviceProps.IsLowLatency == false) {
+            hr = m_AudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
+                m_DeviceProps.hnsBufferDuration, m_DeviceProps.hnsBufferDuration, m_MixFormat, nullptr);
+        } else {
+            hr = m_AudioClient->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, m_MinPeriodInFrames, m_MixFormat, nullptr);
+        }
+#endif
+    // AUDCLNT_STREAMFLAGS_RATEADJUST ??
+    hr = m_AudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, m_DeviceProps.hnsBufferDuration * 2, 0, m_MixFormat, nullptr);
+
+    if (hr == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED) {
+        // Align the buffer if needed, see IAudioClient::Initialize() documentation
+        UINT32 nFrames = 0;
+        hr = m_AudioClient->GetBufferSize(&nFrames);
+        if (FAILED(hr)) {
+            goto exit;
+        }
+        m_AudioClient = nullptr;
+
+        hr = m_device->Activate(__uuidof(IAudioClient3), CLSCTX_ALL, NULL, (void**)&m_AudioClient);
+        if (FAILED(hr)) {
+            goto exit;
+        }
+
+        // 20ms
+        const double duration = 20.0 * 10000;
+        REFERENCE_TIME hnsRequestedDuration = (REFERENCE_TIME)(duration / m_MixFormat->nSamplesPerSec * nFrames + 0.5);
+        hr = m_AudioClient->Initialize(
+            AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, hnsRequestedDuration, hnsRequestedDuration, m_MixFormat, nullptr);
+    }
+
+    if (FAILED(hr)) {
+        goto exit;
+    }
+
+    /*
+    hr = m_AudioClient->GetCurrentSharedModeEnginePeriod(&m_MixFormat, &m_currentSharedPeriodInFrames);
+    if (FAILED(hr)) {
+        goto exit;
+    }
+    */
+
+    // Get the maximum size of the AudioClient Buffer
+    hr = m_AudioClient->GetBufferSize(&m_BufferFrames);
+    if (FAILED(hr)) {
+        goto exit;
+    }
+
+    // Get the render client
+    hr = m_AudioClient->GetService(__uuidof(IAudioRenderClient), (void**)&m_AudioRenderClient);
+    if (FAILED(hr)) {
+        goto exit;
+    }
+
+    /*
+    // Create Async callback for sample events
+    hr = MFCreateAsyncResult(nullptr, &m_sampleReadyCb, nullptr, &m_SampleReadyAsyncResult);
+    if (FAILED(hr)) {
+        goto exit;
+    }
+    */
+
+    // Sets the event handle that the system signals when an audio buffer is ready to be processed by the client
+    hr = m_AudioClient->SetEventHandle(m_SampleReadyEvent);
+    if (FAILED(hr)) {
+        goto exit;
+    }
+
+    // Everything succeeded
+    m_DeviceStateChanged.SetState(DeviceState::DeviceStateInitialized, S_OK, true);
+
+exit:
+    if (FAILED(hr)) {
+        m_DeviceStateChanged.SetState(DeviceState::DeviceStateInError, hr, true);
+        m_device = nullptr;
+        m_AudioClient = nullptr;
+        m_AudioRenderClient = nullptr;
+        m_SampleReadyAsyncResult = nullptr;
     }
 
     return hr;
 }
 
+#if 0
 //
 //  ActivateCompleted()
 //
@@ -98,21 +194,28 @@ HRESULT WASAPIRenderer::ActivateCompleted(IActivateAudioInterfaceAsyncOperation*
             goto exit;
         }
 
-        // Initialize the AudioClient in Shared Mode with the user specified buffer
+#if 0
+        // Initialize the AudioClient in Shared Mode with the user specified buffer        
         if (m_DeviceProps.IsLowLatency == false) {
             hr = m_AudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
                 m_DeviceProps.hnsBufferDuration, m_DeviceProps.hnsBufferDuration, m_MixFormat, nullptr);
         } else {
             hr = m_AudioClient->InitializeSharedAudioStream(AUDCLNT_STREAMFLAGS_EVENTCALLBACK, m_MinPeriodInFrames, m_MixFormat, nullptr);
         }
+#endif
+        hr = m_AudioClient->Initialize(AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, m_DeviceProps.hnsBufferDuration,
+            m_DeviceProps.hnsBufferDuration, &m_MixFormat, nullptr);
+
         if (FAILED(hr)) {
             goto exit;
         }
 
+        /*
         hr = m_AudioClient->GetCurrentSharedModeEnginePeriod(&m_MixFormat, &m_currentSharedPeriodInFrames);
         if (FAILED(hr)) {
             goto exit;
         }
+        */
 
         // Get the maximum size of the AudioClient Buffer
         hr = m_AudioClient->GetBufferSize(&m_BufferFrames);
@@ -153,10 +256,11 @@ exit:
     // Need to return S_OK
     return S_OK;
 }
+#endif
 
-HRESULT WASAPIRenderer::SetDeviceId(winrt::hstring deviceId)
+HRESULT WASAPIRenderer::SetDevice(SmartPtr<IMMDevice> device)
 {
-    m_DeviceIdString = deviceId;
+    m_device = device;
     return S_OK;
 }
 
@@ -178,37 +282,21 @@ HRESULT WASAPIRenderer::SetProperties(DEVICEPROPS props)
 //
 UINT32 WASAPIRenderer::GetBufferFramesPerPeriod()
 {
-    // This block is from the Microsoft sample code but it does not work, all I get is buzz. This happens also on the original sample build so it's not bug
-    // introduced by my changes. Looks like the return value of GetDevicePeriod does not match the actual period used by the audio device.
-#if 0
-    REFERENCE_TIME defaultDevicePeriod = 0;
-    REFERENCE_TIME minimumDevicePeriod = 0;
-
-    if (m_DeviceProps.IsHWOffload) {
-        return m_BufferFrames;
-    }
-
-    // Get the audio device period
-    HRESULT hr = m_AudioClient->GetDevicePeriod(&defaultDevicePeriod, &minimumDevicePeriod);
-    if (FAILED(hr)) {
-        return 0;
-    }
-
-    double devicePeriodInSeconds;
-
-    if (m_DeviceProps.IsLowLatency) {
-        devicePeriodInSeconds = minimumDevicePeriod / (10000.0 * 1000.0);
-    } else {
-        devicePeriodInSeconds = defaultDevicePeriod / (10000.0 * 1000.0);
-    }
-#else
     double devicePeriodInSeconds = GetPeriodInSeconds();
-#endif
 
     return static_cast<UINT32>(m_MixFormat->nSamplesPerSec * devicePeriodInSeconds + 0.5);
 }
 
-double WASAPIRenderer::GetPeriodInSeconds() { return m_currentSharedPeriodInFrames / double(m_MixFormat->nSamplesPerSec); }
+double WASAPIRenderer::GetPeriodInSeconds()
+{
+    REFERENCE_TIME defaultDevicePeriod = 0;
+    REFERENCE_TIME minimumDevicePeriod = 0;
+    HRESULT hr = m_AudioClient->GetDevicePeriod(&defaultDevicePeriod, &minimumDevicePeriod);
+    if (FAILED(hr)) {
+        return 0;
+    }
+    return defaultDevicePeriod / (10000.0 * 1000.0);
+}
 
 //
 //  ConfigureDeviceInternal()
@@ -222,22 +310,51 @@ HRESULT WASAPIRenderer::ConfigureDeviceInternal()
     }
 
     HRESULT hr = S_OK;
-
+#if 0
     // Opt into HW Offloading.  If the endpoint does not support offload it will return AUDCLNT_E_ENDPOINT_OFFLOAD_NOT_CAPABLE
     AudioClientProperties audioProps = {0};
     audioProps.cbSize = sizeof(AudioClientProperties);
-    audioProps.bIsOffload = m_DeviceProps.IsHWOffload;
+    //audioProps.bIsOffload = m_DeviceProps.IsHWOffload;
     audioProps.eCategory = AudioCategory_Media;
 
-    if (m_DeviceProps.IsRawChosen && m_DeviceProps.IsRawSupported) {
+    //if (m_DeviceProps.IsRawChosen && m_DeviceProps.IsRawSupported) {
         audioProps.Options = AUDCLNT_STREAMOPTIONS_RAW;
-    }
+    //}
 
     hr = m_AudioClient->SetClientProperties(&audioProps);
+    if (FAILED(hr)) {
+        LOG("Failed to set IAudioClient properties\n");
+        //return hr;
+    }
+#endif
+    m_MixFormat->cbSize = 0;
+    m_MixFormat->wFormatTag = WAVE_FORMAT_PCM;
+    m_MixFormat->nChannels = 2;
+    m_MixFormat->wBitsPerSample = 16;
+    m_MixFormat->nSamplesPerSec = 48000;
+    m_MixFormat->nBlockAlign = 4;
+    m_MixFormat->nAvgBytesPerSec = m_MixFormat->nBlockAlign * m_MixFormat->nSamplesPerSec;
+
+    WAVEFORMATEX* closestMatch;
+    hr = m_AudioClient->IsFormatSupported(AUDCLNT_SHAREMODE_SHARED, m_MixFormat, &closestMatch);
+    if (FAILED(hr)) {
+        return hr;
+    }
+    if (hr == S_FALSE) {
+        free(m_MixFormat);
+        size_t size = sizeof(WAVEFORMATEX) + closestMatch->cbSize;
+        m_MixFormat = (WAVEFORMATEX*)malloc(size);
+        memcpy(m_MixFormat, closestMatch, size);
+        CoTaskMemFree(closestMatch);
+        closestMatch = NULL;
+    }
+
+    hr = m_AudioClient->GetDevicePeriod(&m_DeviceProps.hnsBufferDuration, NULL);
     if (FAILED(hr)) {
         return hr;
     }
 
+#if 0
     // This sample opens the device is shared mode so we need to find the supported WAVEFORMATEX mix format
     hr = m_AudioClient->GetMixFormat(&m_MixFormat);
     if (FAILED(hr)) {
@@ -254,10 +371,12 @@ HRESULT WASAPIRenderer::ConfigureDeviceInternal()
 
     // Verify the user defined value for hardware buffer
     hr = ValidateBufferValue();
+#endif
 
     return hr;
 }
 
+#if 0
 //
 //  ValidateBufferValue()
 //
@@ -289,6 +408,7 @@ HRESULT WASAPIRenderer::ValidateBufferValue()
 
     return hr;
 }
+#endif
 
 //
 //  SetVolumeOnSession()
@@ -333,6 +453,7 @@ HRESULT WASAPIRenderer::ConfigureSource()
     return hr;
 }
 
+#if 0
 //
 //  StartPlaybackAsync()
 //
@@ -390,8 +511,50 @@ exit:
 
     return S_OK;
 }
+#endif
 
+HRESULT WASAPIRenderer::StartPlayback()
+{
+    HRESULT hr = S_OK;
 
+    if (m_DeviceStateChanged.GetState() == DeviceState::DeviceStatePlaying) {
+        return hr;
+    }
+
+    // We should be stopped if the user stopped playback, or we should be
+    // initialzied if this is the first time through getting ready to playback.
+    if ((m_DeviceStateChanged.GetState() == DeviceState::DeviceStateStopped) || (m_DeviceStateChanged.GetState() == DeviceState::DeviceStateInitialized)) {
+        hr = ConfigureSource();
+        if (FAILED(hr)) {
+            m_DeviceStateChanged.SetState(DeviceState::DeviceStateInError, hr, true);
+            return hr;
+        }
+
+        m_DeviceStateChanged.SetState(DeviceState::DeviceStateStarting, S_OK, true);
+
+    } else if (m_DeviceStateChanged.GetState() == DeviceState::DeviceStatePaused) {
+    }
+    // Pre-Roll the buffer with silence
+    hr = OnAudioSampleRequested(true);
+    if (FAILED(hr)) {
+        goto exit;
+    }
+
+    // Actually start the playback
+    hr = m_AudioClient->Start();
+    if (SUCCEEDED(hr)) {
+        m_DeviceStateChanged.SetState(DeviceState::DeviceStatePlaying, S_OK, true);
+        m_renderThread = std::thread(&WASAPIRenderer::RenderLoopThreadMain, this);
+    }
+
+exit:
+    if (FAILED(hr)) {
+        m_DeviceStateChanged.SetState(DeviceState::DeviceStateInError, hr, true);
+    }
+    return hr;
+}
+
+#if 0
 //
 //  StopPlaybackAsync()
 //
@@ -436,6 +599,45 @@ HRESULT WASAPIRenderer::OnStopPlayback(IMFAsyncResult* pResult)
     return S_OK;
 }
 
+#endif
+
+HRESULT WASAPIRenderer::StopPlayback()
+{
+    if ((m_DeviceStateChanged.GetState() != DeviceState::DeviceStatePlaying) && (m_DeviceStateChanged.GetState() != DeviceState::DeviceStatePaused) &&
+        (m_DeviceStateChanged.GetState() != DeviceState::DeviceStateInError)) {
+        return E_NOT_VALID_STATE;
+    }
+
+    m_DeviceStateChanged.SetState(DeviceState::DeviceStateStopping, S_OK, true);
+
+    /*
+    // Stop playback by cancelling Work Item
+    // Cancel the queued work item (if any)
+    if (0 != m_SampleReadyKey) {
+        MFCancelWorkItem(m_SampleReadyKey);
+        m_SampleReadyKey = 0;
+    }
+    */
+    if (m_renderThread.joinable()) {
+        SetEvent(m_SampleReadyEvent);  // wake up worker thread
+        m_renderThread.join();
+    }
+
+    // Flush anything left in buffer with silence
+    OnAudioSampleRequested(true);
+
+    m_AudioClient->Stop();
+    m_SampleReadyAsyncResult = nullptr;
+
+    // Flush remaining buffers
+    m_toneSource->Flush();
+
+    m_DeviceStateChanged.SetState(DeviceState::DeviceStateStopped, S_OK, true);
+
+    return S_OK;
+}
+
+#if 0
 //
 //  PausePlaybackAsync()
 //
@@ -464,7 +666,51 @@ HRESULT WASAPIRenderer::OnPausePlayback(IMFAsyncResult* pResult)
     m_DeviceStateChanged.SetState(DeviceState::DeviceStatePaused, S_OK, true);
     return S_OK;
 }
+#endif
 
+HRESULT WASAPIRenderer::PausePlayback()
+{
+    if ((m_DeviceStateChanged.GetState() != DeviceState::DeviceStatePlaying) && (m_DeviceStateChanged.GetState() != DeviceState::DeviceStateInError)) {
+        return E_NOT_VALID_STATE;
+    }
+
+    // Change state to stop automatic queueing of samples
+    m_DeviceStateChanged.SetState(DeviceState::DeviceStatePausing, S_OK, false);
+    m_AudioClient->Stop();
+    m_DeviceStateChanged.SetState(DeviceState::DeviceStatePaused, S_OK, true);
+    return S_OK;
+}
+
+void WASAPIRenderer::RenderLoop()
+{
+    // timeBeginPeriod(1); // Increase clock granularity
+    while (m_DeviceStateChanged.GetState() == DeviceState::DeviceStatePlaying) {
+        WaitForSingleObject(m_SampleReadyEvent, 1);
+
+        OnAudioSampleRequested(false);
+    }
+}
+
+void WASAPIRenderer::RenderLoopThreadMain(WASAPIRenderer* _this)
+{
+    HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    HANDLE mmcssHandle = NULL;
+    DWORD mmcssTaskIndex = 0;
+    // Ask MMCSS to temporarily boost the thread priority
+    // to reduce glitches while the low-latency stream plays.
+    // mmcssHandle = AvSetMmThreadCharacteristics(L"Audio", &mmcssTaskIndex);
+    mmcssHandle = AvSetMmThreadCharacteristics(L"Audio", &mmcssTaskIndex);
+
+    _this->RenderLoop();
+
+    if (mmcssHandle) {
+        AvRevertMmThreadCharacteristics(mmcssHandle);
+    }
+    CoUninitialize();
+}
+
+
+#if 0
 //
 //  OnSampleReady()
 //
@@ -487,6 +733,7 @@ HRESULT WASAPIRenderer::OnSampleReady(IMFAsyncResult* pResult)
 
     return hr;
 }
+#endif
 
 //
 //  OnAudioSampleRequested()
@@ -499,48 +746,44 @@ HRESULT WASAPIRenderer::OnAudioSampleRequested(bool IsSilence)
     UINT32 PaddingFrames = 0;
     UINT32 FramesAvailable = 0;
 
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
+    // Get padding in existing buffer
+    hr = m_AudioClient->GetCurrentPadding(&PaddingFrames);
+    if (FAILED(hr)) {
+        goto exit;
+    }
 
-        // Get padding in existing buffer
-        hr = m_AudioClient->GetCurrentPadding(&PaddingFrames);
-        if (FAILED(hr)) {
-            goto exit;
-        }
+    // Audio frames available in buffer
+    if (m_DeviceProps.IsHWOffload) {
+        // In HW mode, GetCurrentPadding returns the number of available frames in the
+        // buffer, so we can just use that directly
+        FramesAvailable = PaddingFrames;
+    } else {
+        // In non-HW shared mode, GetCurrentPadding represents the number of queued frames
+        // so we can subtract that from the overall number of frames we have
+        FramesAvailable = m_BufferFrames - PaddingFrames;
+    }
 
-        // Audio frames available in buffer
-        if (m_DeviceProps.IsHWOffload) {
-            // In HW mode, GetCurrentPadding returns the number of available frames in the
-            // buffer, so we can just use that directly
-            FramesAvailable = PaddingFrames;
-        } else {
-            // In non-HW shared mode, GetCurrentPadding represents the number of queued frames
-            // so we can subtract that from the overall number of frames we have
-            FramesAvailable = m_BufferFrames - PaddingFrames;
-        }
+    // Only continue if we have buffer to write data
+    if (FramesAvailable > 0) {
+        if (IsSilence) {
+            BYTE* Data;
 
-        // Only continue if we have buffer to write data
-        if (FramesAvailable > 0) {
-            if (IsSilence) {
-                BYTE* Data;
-
-                // Fill the buffer with silence
-                hr = m_AudioRenderClient->GetBuffer(FramesAvailable, &Data);
-                if (FAILED(hr)) {
-                    goto exit;
-                }
-
-                hr = m_AudioRenderClient->ReleaseBuffer(FramesAvailable, AUDCLNT_BUFFERFLAGS_SILENT);
+            // Fill the buffer with silence
+            hr = m_AudioRenderClient->GetBuffer(FramesAvailable, &Data);
+            if (FAILED(hr)) {
                 goto exit;
             }
 
-            // Even if we cancel a work item, this may still fire due to the async
-            // nature of things.  There should be a queued work item already to handle
-            // the process of stopping or stopped
-            if (m_DeviceStateChanged.GetState() == DeviceState::DeviceStatePlaying) {
-                // Fill the buffer with a playback sample
-                hr = GetToneSample(FramesAvailable);
-            }
+            hr = m_AudioRenderClient->ReleaseBuffer(FramesAvailable, AUDCLNT_BUFFERFLAGS_SILENT);
+            goto exit;
+        }
+
+        // Even if we cancel a work item, this may still fire due to the async
+        // nature of things.  There should be a queued work item already to handle
+        // the process of stopping or stopped
+        if (m_DeviceStateChanged.GetState() == DeviceState::DeviceStatePlaying) {
+            // Fill the buffer with a playback sample
+            hr = GetToneSample(FramesAvailable);
         }
     }
 exit:
@@ -550,7 +793,7 @@ exit:
         m_AudioRenderClient = nullptr;
         m_SampleReadyAsyncResult = nullptr;
 
-        hr = InitializeAudioDeviceAsync();
+        hr = InitializeAudioDevice();
     }
 
     return hr;
@@ -574,16 +817,25 @@ HRESULT WASAPIRenderer::GetToneSample(UINT32 FramesAvailable)
             hr = m_AudioRenderClient->ReleaseBuffer(FramesAvailable, AUDCLNT_BUFFERFLAGS_SILENT);
         }
 
-        StopPlaybackAsync();
-    } else if (m_toneSource->GetBufferLength() <= (FramesAvailable * m_MixFormat->nBlockAlign)) {
+        printf("FIXME: StopPlayback() on EOF\n");
+        // TODO: fix this. Deadlock because this function is called inside render thread
+        // StopPlayback();
+
+    } else {
         UINT32 ActualFramesToRead = m_toneSource->GetBufferLength() / m_MixFormat->nBlockAlign;
         UINT32 ActualBytesToRead = ActualFramesToRead * m_MixFormat->nBlockAlign;
 
-        hr = m_AudioRenderClient->GetBuffer(ActualFramesToRead, &Data);
-        if (SUCCEEDED(hr)) {
-            hr = m_toneSource->FillSampleBuffer(ActualBytesToRead, Data);
+        UINT32 batches = FramesAvailable / ActualFramesToRead;
+        if (batches > 0) {
+            hr = m_AudioRenderClient->GetBuffer(batches * ActualFramesToRead, &Data);
             if (SUCCEEDED(hr)) {
-                hr = m_AudioRenderClient->ReleaseBuffer(ActualFramesToRead, 0);
+                for (UINT32 i = 0; i < batches && SUCCEEDED(hr); i++) {
+                    hr = m_toneSource->FillSampleBuffer(ActualBytesToRead, Data);
+                    Data += ActualBytesToRead;
+                }
+                if (SUCCEEDED(hr)) {
+                    hr = m_AudioRenderClient->ReleaseBuffer(batches * ActualFramesToRead, 0);
+                }
             }
         }
     }

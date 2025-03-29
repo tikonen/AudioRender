@@ -13,10 +13,10 @@ class AudioDevice
 private:
     struct DeviceWrapper;
 
-    DeviceWrapper* m_wrapper;
+    std::unique_ptr<DeviceWrapper> m_wrapper;
     std::mutex m_mutex;
     std::condition_variable m_cv;
-    std::atomic<DeviceState> m_deviceState = DeviceState::DeviceStateUnInitialized;
+    std::atomic<DeviceState> m_deviceState = DeviceState::DeviceStateUnInitialized;    
 
 public:
     AudioDevice();

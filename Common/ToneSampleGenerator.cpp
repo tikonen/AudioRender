@@ -20,7 +20,7 @@
 #include "ToneSampleGenerator.hpp"
 
 
-const int TONE_DURATION_SEC = 30;
+const int TONE_DURATION_SEC = 10;
 const double TONE_AMPLITUDE = 0.5;  // Scalar value, should be between 0.0 - 1.0
 
 template <typename T>
@@ -72,9 +72,8 @@ inline RenderSampleType CalculateMixFormatType(WAVEFORMATEX* wfx)
 //
 ToneSampleGenerator::ToneSampleGenerator(unsigned int frequency)
     : m_frequency(frequency)
+    , m_sampleIdx(0)
 {
-    m_SampleQueue = nullptr;
-    m_SampleQueueTail = &m_SampleQueue;
 }
 
 //
@@ -102,34 +101,21 @@ HRESULT ToneSampleGenerator::Initialize(UINT32 FramesPerPeriod, WAVEFORMATEX* wf
     double theta = 0;
 
     for (UINT64 i = 0; i < renderBufferCount; i++) {
-        RenderBuffer* SampleBuffer = new RenderBuffer();
-        if (nullptr == SampleBuffer) {
-            return E_OUTOFMEMORY;
-        }
-
-        SampleBuffer->BufferSize = renderBufferSizeInBytes;
-        SampleBuffer->BytesFilled = renderBufferSizeInBytes;
-        SampleBuffer->Buffer = new BYTE[renderBufferSizeInBytes];
-        if (nullptr == SampleBuffer->Buffer) {
-            return E_OUTOFMEMORY;
-        }
+        std::vector<BYTE> sampleBuffer(renderBufferSizeInBytes);
 
         switch (CalculateMixFormatType(wfx)) {
             case RenderSampleType::SampleType16BitPCM:
-                GenerateSineSamples<short>(
-                    SampleBuffer->Buffer, SampleBuffer->BufferSize, m_frequency, wfx->nChannels, wfx->nSamplesPerSec, TONE_AMPLITUDE, &theta);
+                GenerateSineSamples<short>(sampleBuffer.data(), sampleBuffer.size(), m_frequency, wfx->nChannels, wfx->nSamplesPerSec, TONE_AMPLITUDE, &theta);
                 break;
 
             case RenderSampleType::SampleTypeFloat:
-                GenerateSineSamples<float>(
-                    SampleBuffer->Buffer, SampleBuffer->BufferSize, m_frequency, wfx->nChannels, wfx->nSamplesPerSec, TONE_AMPLITUDE, &theta);
+                GenerateSineSamples<float>(sampleBuffer.data(), sampleBuffer.size(), m_frequency, wfx->nChannels, wfx->nSamplesPerSec, TONE_AMPLITUDE, &theta);
                 break;
 
             default: return E_UNEXPECTED; break;
         }
 
-        *m_SampleQueueTail = SampleBuffer;
-        m_SampleQueueTail = &SampleBuffer->Next;
+        m_sampleQueue.emplace_back(sampleBuffer);
     }
     return hr;
 }
@@ -178,15 +164,18 @@ HRESULT ToneSampleGenerator::FillSampleBuffer(UINT32 BytesToRead, BYTE* Data)
         return E_POINTER;
     }
 
-    RenderBuffer* SampleBuffer = m_SampleQueue;
+    std::vector<BYTE>& sample = m_sampleQueue[m_sampleIdx];
 
-    if (BytesToRead > SampleBuffer->BufferSize) {
+    if (BytesToRead > sample.size()) {
         return E_INVALIDARG;
     }
 
-    CopyMemory(Data, SampleBuffer->Buffer, BytesToRead);
+    memcpy(Data, sample.data(), BytesToRead);
 
-    m_SampleQueue = m_SampleQueue->Next;
+    m_sampleIdx++;
+    if (m_sampleIdx >= m_sampleQueue.size()) {
+        m_sampleIdx = 0;
+    }
 
     return S_OK;
 }
@@ -198,10 +187,6 @@ HRESULT ToneSampleGenerator::FillSampleBuffer(UINT32 BytesToRead, BYTE* Data)
 //
 void ToneSampleGenerator::Flush()
 {
-    while (m_SampleQueue != nullptr) {
-        RenderBuffer* SampleBuffer = m_SampleQueue;
-        m_SampleQueue = SampleBuffer->Next;
-        delete SampleBuffer;
-        SampleBuffer = nullptr;
-    }
+    m_sampleIdx = 0;
+    m_sampleQueue.clear();
 }
