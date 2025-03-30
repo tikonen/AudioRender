@@ -25,7 +25,7 @@ public:
         m_yScale = yscale;
     }
 
-    void setFixedRenderingRate(bool fixedRate) { m_fixedRate = fixedRate; }    
+    void setFixedRenderingRate(bool fixedRate) { m_fixedRate = fixedRate; }
     void setIdleBox(bool idleBox) { m_idleBox = idleBox; }
 
     //==========================================================
@@ -67,14 +67,11 @@ private:
     bool m_idleBox = false;
 
     // Buffers that are ready for rendering and can be picked up by the FillSampleBuffer
-    //std::queue<std::vector<uint8_t>> m_renderQueue;
     std::array<std::vector<uint8_t>, 128> m_renderBuffer;
     uint32_t m_readIdx;
     uint32_t m_writeIdx;
-    //std::mutex m_renderMutex;
     HANDLE m_frameEvent;
     uint32_t m_bufferCount;
-    //std::condition_variable m_frameCv;
 
     enum RenderSampleType {
         SampleTypeUnknown,

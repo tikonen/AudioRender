@@ -139,7 +139,7 @@ int main(int argc, char* argv[])
             SetConsoleCtrlHandler(ctrlHandler, TRUE);
             LOG("Ctrl-C to break.");
 
-            while (g_running) {
+            while (g_running && audioDevice.GetDeviceState() == DeviceState::DeviceStatePlaying) {
                 Sleep(100);
             }
 

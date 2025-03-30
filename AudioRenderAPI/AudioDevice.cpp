@@ -16,18 +16,16 @@ namespace AudioRender
 {
 // Wrapper hides the messy dependencies from the class header
 struct AudioDevice::DeviceWrapper {
-    std::unique_ptr<WASAPIRenderer> m_renderer;    
+    std::unique_ptr<WASAPIRenderer> m_renderer;
 };
 
-AudioDevice::AudioDevice()    
-{
-}
+AudioDevice::AudioDevice() {}
 
-AudioDevice::~AudioDevice() 
-{   
-    if (m_wrapper) { 
+AudioDevice::~AudioDevice()
+{
+    if (m_wrapper) {
         m_wrapper = nullptr;
-        //MFShutdown();
+        // MFShutdown();
         CoUninitialize();
     }
 }
@@ -67,12 +65,12 @@ bool AudioDevice::InitializeWithConfig(Configuration& config)
     // Initializing single threaded to allow embedding as Unity plugin
     // winrt::init_apartment(winrt::apartment_type::single_threaded);
 
-    //HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
+    // HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
     HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    
+
     if (FAILED(hr)) {
         LOGE("CoInitializeEx startup failed. %s.", HResultToString(hr));
-    }   
+    }
     m_wrapper = std::make_unique<AudioDevice::DeviceWrapper>();
     m_wrapper->m_renderer = std::make_unique<WASAPIRenderer>();
 
@@ -82,7 +80,7 @@ bool AudioDevice::InitializeWithConfig(Configuration& config)
     SmartPtr<IMMDeviceCollection> pDevices;
 
     hr = pEnumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &pDevices);
-    
+
     SmartPtr<IMMDevice> outDevice;
 
     unsigned int count;
@@ -91,9 +89,9 @@ bool AudioDevice::InitializeWithConfig(Configuration& config)
         SmartPtr<IMMDevice> device;
         SmartPtr<IPropertyStore> props;
 
-        pDevices->Item(i, &device);        
+        pDevices->Item(i, &device);
         device->OpenPropertyStore(STGM_READ, &props);
-    
+
         PROPVARIANT varName;
         PropVariantInit(&varName);
         props->GetValue(PKEY_DeviceInterface_FriendlyName, &varName);
@@ -103,7 +101,7 @@ bool AudioDevice::InitializeWithConfig(Configuration& config)
             std::wstring devName(varName.pwszVal);
             if (devName.find(config.deviceName) != std::wstring::npos) {
                 outDevice = device;
-            }                        
+            }
         }
     }
 
@@ -137,11 +135,11 @@ bool AudioDevice::InitializeWithConfig(Configuration& config)
         props->GetValue(PKEY_Device_FriendlyName, &varName);
 
         if (varName.vt != VT_EMPTY) {
-            LOG("Using device: %S", varName.pwszVal);     
+            LOG("Using device: %S", varName.pwszVal);
         }
     }
 
- #if 0
+#if 0
     winrt::hstring id;
 
     bool rawSupported = false;
@@ -200,8 +198,8 @@ bool AudioDevice::InitializeWithConfig(Configuration& config)
         */
     }
 #endif
-    
-    //hr = MakeAndInitialize<WASAPIRenderer>(&m_wrapper->m_renderer);
+
+    // hr = MakeAndInitialize<WASAPIRenderer>(&m_wrapper->m_renderer);
     m_wrapper->m_renderer->SetDevice(outDevice);
     if (FAILED(hr)) {
         LOGE("Unable to initialize renderer. %s", HResultToString(hr));
@@ -213,8 +211,8 @@ bool AudioDevice::InitializeWithConfig(Configuration& config)
     props.IsLowLatency = false;
     props.IsHWOffload = false;
     props.IsBackground = false;
-    //props.IsRawChosen = true;
-    //props.IsRawSupported = false; // rawSupported;
+    // props.IsRawChosen = true;
+    // props.IsRawSupported = false; // rawSupported;
 
     m_wrapper->m_renderer->SetProperties(props);
 
@@ -248,7 +246,7 @@ bool AudioDevice::Start()
 void AudioDevice::Stop()
 {
     m_wrapper->m_renderer->StopPlayback();
-    WaitForDeviceState(2, DeviceState::DeviceStateStopped);    
+    WaitForDeviceState(2, DeviceState::DeviceStateStopped);
 }
 
 }  // namespace AudioRender

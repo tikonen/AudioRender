@@ -140,10 +140,10 @@ void ToneSampleGenerator::GenerateSineSamples(
     T* dataBuffer = reinterpret_cast<T*>(Buffer);
     double theta = (InitialTheta != NULL ? *InitialTheta : 0);
 
-    for (size_t i = 0; i < BufferLength / sizeof(T); i += ChannelCount) {
+    for (int i = 0; i < BufferLength / sizeof(T); i += ChannelCount) {
         double sinValue = Amplitude * sin(theta);
-        for (size_t j = 0; j < ChannelCount; j++) {
-            dataBuffer[i + j] = Convert<T>(sinValue);
+        for (int j = 0; j < ChannelCount; j++) {
+            dataBuffer[i + j] = Convert<T>(sinValue) * (j ? -1 : 1);
         }
         theta += sampleIncrement;
     }

@@ -63,18 +63,6 @@ bool AudioGraphicsBuilder::WaitSync(int timeout)
         if (res != WAIT_OBJECT_0) return false;
     }
     return true;
-
-#if 0
-    // Consider sync completed when there is one or less ready data block waiting for rendering
-    std::unique_lock<std::mutex> lock(m_renderMutex);
-    auto pred = [&]() { return m_renderQueue.size() <= QUEUE_WATERMARK; };
-    if (timeout != 0) {
-        m_frameCv.wait_for(lock, std::chrono::milliseconds(timeout), pred);
-    } else {
-        m_frameCv.wait(lock, pred);
-    }
-    return m_renderQueue.size() <= QUEUE_WATERMARK;
-#endif
 }
 
 void AudioGraphicsBuilder::Submit() { EncodeAudio(m_operations); }
@@ -106,7 +94,7 @@ bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
     if (m_sampleType == RenderSampleType::SampleType16BitPCM) {
         short* pcmbuffer = static_cast<short*>(buffer);
         pcmbuffer[0] = Convert<short>(x);  // left channel
-        pcmbuffer[1] = Convert<short>(y);  // right channel        
+        pcmbuffer[1] = Convert<short>(y);  // right channel
     } else if (m_sampleType == RenderSampleType::SampleType24BitPCM) {
         uint8_t* pcmbuffer = static_cast<uint8_t*>(buffer);
         int32_t v;
@@ -119,11 +107,11 @@ bool AudioGraphicsBuilder::AddToBuffer(float x, float y, EncodeCtx& ctx)
         v = Convert<int32_t>(y) >> 8;
         pcmbuffer[3] = v & 0xFF;
         pcmbuffer[4] = (v >> 8) & 0xFF;
-        pcmbuffer[5] = (v >> 16) & 0xFF;        
+        pcmbuffer[5] = (v >> 16) & 0xFF;
     } else if (m_sampleType == RenderSampleType::SampleTypeFloat) {
         float* fltbuffer = static_cast<float*>(buffer);
         fltbuffer[0] = Convert<float>(x);  // left channel
-        fltbuffer[1] = Convert<float>(y);  // right channel        
+        fltbuffer[1] = Convert<float>(y);  // right channel
     }
     m_bufferIdx += m_wfx.nBlockAlign;
     assert(m_bufferIdx <= m_bufferSize);
@@ -143,14 +131,6 @@ void AudioGraphicsBuilder::QueueBuffer()
         // zero out remaining bytes
         memset(m_audioBuffer.data() + m_bufferIdx, 0, m_bufferSize - m_bufferIdx);
     }
-
-    /*
-    static FILE* out = nullptr;
-    if (!out) {
-        out = fopen("out.dat", "wb");
-    }
-    fwrite(m_audioBuffer.data(), 1, m_bufferSize, out);
-    */
 
     // audiorender buffer is full, submit it for rendering
     m_renderBuffer[m_writeIdx % m_renderBuffer.size()] = m_audioBuffer;
@@ -220,7 +200,7 @@ void AudioGraphicsBuilder::FillIdle(EncodeCtx& ctx)
 void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops)
 {
 #if 0
-    // Sawtooth signal
+    // Sawtooth debug signal
     EncodeCtx ctx{0};    
 
     // Steps can be calculated for a given frequency
@@ -249,7 +229,7 @@ void AudioGraphicsBuilder::EncodeAudio(const std::vector<GraphicsPrimitive>& ops
                 break;
         }
     }
-    
+
     if (m_fixedRate) {
         // This mode submits always buffers for rendering, even when there is
         // not enough data in the buffer. This limits rendering speed.
@@ -293,16 +273,7 @@ HRESULT AudioGraphicsBuilder::Initialize(UINT32 FramesPerPeriod, WAVEFORMATEX* w
         // must be stereo to encode X and Y
         return E_NOTIMPL;
     }
-    // const unsigned int Frequency = 50;
-
-    // Calculate buffer size and number of buffers needed for this frequency (framerate) and samplerate
     int renderBufferSize = FramesPerPeriod * m_wfx.nBlockAlign;
-    // long renderDataLength = (m_wfx.nSamplesPerSec / Frequency * m_wfx.nBlockAlign) + (renderBufferSize - 1);
-    // int renderBufferCount = renderDataLength / renderBufferSize;
-
-    // Calculate effective fps
-    // int fps = m_wfx.nSamplesPerSec / renderBufferCount / FramesPerPeriod;
-
     m_bufferSize = renderBufferSize;
     m_audioBuffer.resize(m_bufferSize);
 
@@ -327,14 +298,6 @@ HRESULT AudioGraphicsBuilder::FillSampleBuffer(UINT32 BytesToRead, BYTE* Data)
         }
         assert(BytesToRead == m_bufferSize);
         memcpy(Data, buffer.data(), BytesToRead);
-
-        /*
-        static FILE* out = nullptr;
-        if (!out) {
-            out = fopen("sout.dat", "wb");
-        }        
-        fwrite(Data, 1, BytesToRead, out);
-        */
 
     } else {
         memset(Data, 0, BytesToRead);
