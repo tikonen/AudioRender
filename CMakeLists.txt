@@ -24,6 +24,7 @@ add_subdirectory(vendor)
 # Executables
 
 add_subdirectory(AudioRenderAPI)
+add_subdirectory(AudioRenderAppCommon)
 add_subdirectory(AudioRenderAPITest)
 add_subdirectory(AudioRenderCAPI)
 add_subdirectory(LunarLander)

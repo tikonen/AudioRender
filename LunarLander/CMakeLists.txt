@@ -7,14 +7,14 @@ file(GLOB_RECURSE _source_files
   "${CMAKE_CURRENT_SOURCE_DIR}/*.[c|h]pp"
 )
 
-set(_common_dir "${CMAKE_SOURCE_DIR}/Common")
-
-file(GLOB_RECURSE _common_files
-	"${_common_dir}/*.[c|h]pp"
-)
-source_group("Application" FILES ${_source_files})
-source_group("Common" FILES ${_common_files})
-
+#set(_common_dir "${CMAKE_SOURCE_DIR}/Common")
+#
+#file(GLOB_RECURSE _common_files
+#	"${_common_dir}/*.[c|h]pp"
+#)
+#source_group("Application" FILES ${_source_files})
+#source_group("Common" FILES ${_common_files})
+#
 add_executable(${_target} ${_source_files} ${_common_files})
 
 target_compile_definitions(${_target} PRIVATE -D_UNICODE -DUNICODE)
@@ -23,9 +23,10 @@ target_compile_definitions(${_target} PRIVATE -D_UNICODE -DUNICODE)
 set_target_properties(${_target} PROPERTIES
         CXX_STANDARD 17)
 
-target_include_directories(${_target} PRIVATE ${_common_dir})
+#target_include_directories(${_target} PRIVATE ${_common_dir})
 
 target_link_libraries(${_target} AudioRenderAPI)
+target_link_libraries(${_target} AudioRenderAppCommon)
 
 #target_link_libraries(${_target} rapidjson)
 target_link_libraries(${_target} glm) # Math library
@@ -33,11 +34,11 @@ target_link_libraries(${_target} stb) # Raster image loading
 target_link_libraries(${_target} nanosvg) # Vector image loading
 
 # WASAPI Audio
-target_link_libraries(${_target} "Mfplat.lib")
-target_link_libraries(${_target} "windowsapp.lib")
+#target_link_libraries(${_target} "Mfplat.lib")
+#target_link_libraries(${_target} "windowsapp.lib")
 
 # Visualization support
-target_link_libraries(${_target} ImGui)
+#target_link_libraries(${_target} ImGui)
 target_link_libraries(${_target} "D3D10.lib")
 
 # Set working directory to target exe directory, app looks files from its current directory

@@ -44,7 +44,7 @@ public:
     WASAPIRenderer();
     ~WASAPIRenderer();
 
-    void SetGenerator(std::shared_ptr<IAudioGenerator> generator) { m_toneSource = generator; }
+    void SetGenerator(std::shared_ptr<IAudioGenerator> generator) { m_audioSource = generator; }
 
     HRESULT SetDevice(SmartPtr<IMMDevice> device);
     HRESULT SetProperties(DEVICEPROPS props);
@@ -86,5 +86,5 @@ private:
     DeviceStateChangedEvent m_DeviceStateChanged;
     DEVICEPROPS m_DeviceProps;
 
-    std::shared_ptr<IAudioGenerator> m_toneSource;
+    std::shared_ptr<IAudioGenerator> m_audioSource;
 };

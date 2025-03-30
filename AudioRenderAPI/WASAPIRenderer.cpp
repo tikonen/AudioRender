@@ -303,7 +303,7 @@ HRESULT WASAPIRenderer::ConfigureSource()
     UINT32 FramesPerPeriod = GetBufferFramesPerPeriod();
 
     // Generate the sine wave sample buffer
-    hr = m_toneSource->Initialize(FramesPerPeriod, m_MixFormat);
+    hr = m_audioSource->Initialize(FramesPerPeriod, m_MixFormat);
 
     return hr;
 }
@@ -370,7 +370,7 @@ HRESULT WASAPIRenderer::StopPlayback()
     m_SampleReadyAsyncResult = nullptr;
 
     // Flush remaining buffers
-    m_toneSource->Flush();
+    m_audioSource->Flush();
 
     m_DeviceStateChanged.SetState(DeviceState::DeviceStateStopped, S_OK, true);
 
@@ -492,7 +492,7 @@ HRESULT WASAPIRenderer::GetToneSample(UINT32 FramesAvailable)
     BYTE* Data;
 
     // Post-Roll Silence
-    if (m_toneSource->IsEOF()) {
+    if (m_audioSource->IsEOF()) {
         hr = m_AudioRenderClient->GetBuffer(FramesAvailable, &Data);
         if (SUCCEEDED(hr)) {
             // Ignore the return
@@ -502,7 +502,7 @@ HRESULT WASAPIRenderer::GetToneSample(UINT32 FramesAvailable)
         hr = S_FALSE;
 
     } else {
-        UINT32 ActualFramesToRead = m_toneSource->GetBufferLength() / m_MixFormat->nBlockAlign;
+        UINT32 ActualFramesToRead = m_audioSource->GetBufferLength() / m_MixFormat->nBlockAlign;
         UINT32 ActualBytesToRead = ActualFramesToRead * m_MixFormat->nBlockAlign;
 
         UINT32 batches = FramesAvailable / ActualFramesToRead;
@@ -510,7 +510,7 @@ HRESULT WASAPIRenderer::GetToneSample(UINT32 FramesAvailable)
             hr = m_AudioRenderClient->GetBuffer(batches * ActualFramesToRead, &Data);
             if (SUCCEEDED(hr)) {
                 for (UINT32 i = 0; i < batches && SUCCEEDED(hr); i++) {
-                    hr = m_toneSource->FillSampleBuffer(ActualBytesToRead, Data);
+                    hr = m_audioSource->FillSampleBuffer(ActualBytesToRead, Data);
                     Data += ActualBytesToRead;
                 }
                 if (SUCCEEDED(hr)) {

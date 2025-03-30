@@ -1,5 +1,4 @@
-#include "pch.h"
-
+#include <stdio.h>
 #include <vector>
 
 #include "DrawDevice.hpp"

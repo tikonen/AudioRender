@@ -336,10 +336,10 @@ void SimulatorRenderView::Submit()
         const GraphicsPrimitive& p = m_operations[i];
         switch (p.type) {
             case GraphicsPrimitive::Type::DRAW_CIRCLE: {
-                drawList->AddCircle(p2p(p.p), width * p.r, color, std::lround(p.r * 50.f), 8 * p.intensity);
+                drawList->AddCircle(p2p(p.p), width * p.r, color, std::lround(p.r * 50.f), log(10 * p.intensity));
             } break;
             case GraphicsPrimitive::Type::DRAW_LINE: {
-                drawList->AddLine(p2p(p.p), p2p(p.toPoint), color, 8 * p.intensity);
+                drawList->AddLine(p2p(p.p), p2p(p.toPoint), color, log(10 * p.intensity));
             } break;
             case GraphicsPrimitive::Type::DRAW_SYNC:
                 /*ignore*/

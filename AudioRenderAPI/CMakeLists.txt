@@ -23,8 +23,8 @@ target_include_directories(${_target} PUBLIC
 set_target_properties(${_target} PROPERTIES CXX_STANDARD 17)
 
 #target_link_libraries(${_target} rapidjson)
-target_link_libraries(${_target} stb) # Raster image loading
-target_link_libraries(${_target} nanosvg) # Vector image loading
+#target_link_libraries(${_target} stb) # Raster image loading
+#target_link_libraries(${_target} nanosvg) # Vector image loading
 
 # WASAPI Audio
 target_link_libraries(${_target} "Mfplat.lib")

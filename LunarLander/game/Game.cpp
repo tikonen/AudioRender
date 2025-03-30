@@ -112,7 +112,7 @@ struct TextUtil {
     const Character d4 = {{{4, 0}, {4, -10}, {0, -4}, {5, -4}}};
     const Character d5 = {{{0, 0}, {4, 0}, {4, -5}, {0.5, -5}, {0.5, -10}, {4, -10}}};
     const Character d6 = {{{0, -5}, {4, -5}, {4, 0}, {0, 0}, {0, -10}, {4, -10}}};
-    const Character d7 = {{{4, 0}, {4, -10}, {0, -10}}};
+    const Character d7 = {{{3, 0}, {4, -10}, {0, -10}}};
     const Character d8 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}}, {{0, -5}, {4, -5}}};
     const Character d9 = {{{3, 0}, {4, -10}, {0, -10}, {0, -6}, {4, -6}}};
 
@@ -151,14 +151,14 @@ struct TextUtil {
         letters['9'] = &d9;
     }
 
-    void drawCharacter(char c, float xpos, float ypos) { drawCharacter(letters[c], xpos, ypos); };
+    void drawCharacter(char c, float xpos, float ypos, float scale = 1.0f) { drawCharacter(letters[c], xpos, ypos, scale); };
 
-    void drawDigit(int d, float xpos, float ypos) { drawCharacter(digits[d % 10], xpos, ypos); };
+    void drawDigit(int d, float xpos, float ypos, float scale = 1.0f) { drawCharacter(digits[d % 10], xpos, ypos, scale); };
 
-    void writeText(const char* text, float xpos, float ypos)
+    void writeText(const char* text, float xpos, float ypos, float scale = 1.0f)
     {
         static float widthCache[0xFF + 1] = {0};
-        const float spacing = 1.f;
+        const float spacing = 2.f;
 
         while (char c = *text++) {
             const Character* cr = letters[c];
@@ -173,21 +173,21 @@ struct TextUtil {
                         maxx = std::max(maxx, p.x);
                     }
                 }
-                width = widthCache[c] = std::max(std::abs(maxx - minx), 1.f);
+                width = widthCache[c] = std::max(std::abs(maxx - minx), 1.5f);
             }
-            drawCharacter(cr, xpos, ypos);
+            drawCharacter(cr, xpos, ypos, scale);
             xpos += width + spacing;
         }
     };
 
 private:
-    void drawCharacter(const Character* lf, float xpos, float ypos)
+    void drawCharacter(const Character* lf, float xpos, float ypos, float scale)
     {
         const AudioRender::Point offset{xpos, ypos};
         for (const auto& seg : *lf) {
-            device->SetPoint((seg[0] + offset) * letterScale);
+            device->SetPoint((seg[0] + offset) * letterScale * scale);
             for (size_t i = 1; i < seg.size(); i++) {
-                device->DrawLine((seg[i] + offset) * letterScale);
+                device->DrawLine((seg[i] + offset) * letterScale * scale);
             }
         }
     };
@@ -733,8 +733,8 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             }
         }
 
-        // indicate fuel
-        {
+        // indicate fuel        
+        if (gameState == ST_PLAY) {
             const float lowFuelAlarmLevel = .15f;
 
             float p = lander.fuel / lander.initialFuel;
@@ -743,6 +743,11 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 blinkTimer.update(elapsed / 1000.f);
                 int step = 1;
                 if (p > lowFuelAlarmLevel || blinkTimer.flipflop) {  // blink if low fuel
+#if 1
+                    char buffer[16];
+                    snprintf(buffer, sizeof(buffer), "%02d", (int)std::roundf(p * 100));
+                    textUtil.writeText(buffer, -8, -35.0f, .5f);
+#else
                     Vector2Df needle(-0.5, 0);
                     const int steps = 20;
                     needle = vrotate(needle, DEGTORAD(45 * p));
@@ -756,9 +761,11 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                             device->SetPoint({needle.x, -needle.y});
                         step = 1 - step;
                     }
+#endif
                 }
             }
         }
+        
 
 
 #if 0

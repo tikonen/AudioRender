@@ -12,8 +12,8 @@
 
 #include "cxxopts.hpp"
 
-#include "ToneSampleGenerator.hpp"
-#include "SimulatorView.hpp"
+#include <ToneSampleGenerator.hpp>
+#include <SimulatorView.hpp>
 
 BOOL WINAPI ctrlHandler(DWORD);
 std::atomic_bool g_running = true;
