@@ -430,7 +430,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         }
         // clear frame
         device->Begin();
-        device->SetIntensity(0.5f);
+        device->SetIntensity(0.25f);
 
         if (controller.zoomIn.pressed()) {
             viewport.zoom += 1.f;
@@ -573,7 +573,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             }
 
             // Mark landing places
-            device->SetIntensity(0.6f);
+            device->SetIntensity(0.5f);
             for (auto& p : map.landingPlaces) {
                 if (p.first > terrainxe) continue;
                 if (p.second < terrainxs) continue;
@@ -710,7 +710,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
             if (engineon) {
                 // draw engine exhaust
-                device->SetIntensity(0.4f);
+                device->SetIntensity(0.1f);
 
                 // vary exhaust size
                 float h = lander.height;

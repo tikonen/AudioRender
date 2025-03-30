@@ -9,6 +9,10 @@
 
 #define QUEUE_WATERMARK 3
 
+#define MIN(a, b) ((a) > (b) ? (b) : (a))
+#define MAX(a, b) ((a) < (b) ? (b) : (a))
+#define CLAMP(x, minx, maxx) MAX(minx, MIN(maxx, x))
+
 namespace AudioRender
 {
 // Generates steps to draw a box following edges
@@ -79,7 +83,7 @@ inline float Convert<float>(float Value)
 template <>
 inline short Convert<short>(float Value)
 {
-    return (short)roundf(Value * _I16_MAX);
+    return (short)CLAMP(roundf(Value * _I16_MAX), _I16_MIN, _I16_MAX);    
 };
 
 template <>
@@ -138,7 +142,7 @@ void AudioGraphicsBuilder::QueueBuffer()
     m_bufferIdx = 0;
 }
 
-const float SpeedMultiplier = 5.0f;
+const float SpeedMultiplier = 1.5f;
 
 int AudioGraphicsBuilder::EncodeCircle(const GraphicsPrimitive& p, EncodeCtx& ctx)
 {
