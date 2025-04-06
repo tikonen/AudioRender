@@ -91,14 +91,14 @@ struct Key : Button {
 // Utility to write text on the view
 struct TextUtil {
     using Character = std::vector<std::vector<AudioRender::Point>>;
-    
+
     const Character l_A = {{{0, 0}, {0, -7.5}, {1, -10}, {2.5, -10}, {3.5, -7.5}, {3.5, 0}}, {{0, -5}, {3.5, -5}}};
     const Character l_E = {{{3.5f, 0}, {0, 0}, {0, -10}, {3.5f, -10}}, {{0, -5.f}, {3, -5.f}}};
     const Character l_F = {{{0, 0}, {0, -10}, {4, -10}}, {{0, -5.f}, {3, -5.f}}};
     const Character l_I = {{{0, 0}, {0, -10}}};
     const Character l_K = {{{0, 0}, {0, -10}}, {{4, -10}, {0, -5}, {4, 0}}};
     const Character l_L = {{{0, -10}, {0, 0}, {3.5f, 0}}};
-    const Character l_O = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};    
+    const Character l_O = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};
     const Character l_P = {{{0, 0}, {0, -10}, {1, -10}, {3.5, -9}, {3.5, -6}, {1, -5}, {0, -5}}};
     const Character l_R = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
     const Character l_S = {{{3.5, -10}, {0, -10}, {0, -5}, {3.5, -5}, {3.5, 0}, {0, 0}}};
@@ -277,7 +277,7 @@ struct Lander {
     float angle;  // in radians
     float fuel;   // burntime in seconds
 
-    const float height = 5.f;
+    const float height = 4.f;
     const float width = 5.f;
 
     Lander() { reset(0, 0); }
@@ -317,6 +317,10 @@ struct Lander {
             engine = 0;
         }
         Vector2Df tvec = Vector2Df(0, engine * -thrust / (mass + fuel));
+
+        // add some effect from the steering
+        tvec += Vector2D(rotation * thrust / (mass + fuel) / 5, abs(rotation) * thrust / (mass + fuel) / 10);
+
         Vector2Df totalAcc = A + vrotate(tvec, angle);
         // Integrate position
         Vector2Df vdelta = totalAcc * dt * accScale;
@@ -346,6 +350,8 @@ struct Lander {
 
 void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 {
+    srand(time(NULL));
+
     ViewPort viewport;
     viewport.reset();
 
@@ -356,6 +362,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
     auto generateLevel = [&](int level) { map = generateTerrain(level, viewport.width); };
 
+    Timer landingPadTimer(true, 0.5f);
     Timer coolDownTimer(false, 2.0f);  // Restrics state change speed
     enum GameState { ST_WAIT, ST_PLAY, ST_WIN, ST_FAIL } gameState = ST_WAIT;
     float totalTime = 0;
@@ -430,7 +437,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         if (paused) {
             if (paused == 1) {
-                textUtil.writeText("PAUSED", -10, -10.0f, .5f);
+                textUtil.writeText("PAUSED", -15, -10.0f, .5f);
                 paused = 2;
             }
             // just show last render
@@ -582,17 +589,21 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 y0 = y1;
             }
 
-            // Mark landing places
-            device->SetIntensity(0.5f);
-            for (auto& p : map.landingPlaces) {
-                if (p.first > terrainxe) continue;
-                if (p.second < terrainxs) continue;
+            landingPadTimer.update(elapsed / 1000.f);
+            // blink landing pad if zoom level is far enough
+            if (landingPadTimer.flipflop || viewport.zoom > 5) {
+                // Mark landing places
+                device->SetIntensity(0.5f);
+                for (auto& p : map.landingPlaces) {
+                    if (p.first > terrainxe) continue;
+                    if (p.second < terrainxs) continue;
 
-                const float y = (map.terrain[p.first] - terrainyOffset + 1) * windowScale;
-                if (std::fabsf(y) > 0.55f) continue;  // not visible
+                    const float y = (map.terrain[p.first] - terrainyOffset + 1) * windowScale;
+                    if (std::fabsf(y) > 0.55f) continue;  // not visible
 
-                device->SetPoint({(p.first - viewport.pos.x) * windowScale, y});
-                device->DrawLine({(p.second - viewport.pos.x) * windowScale, y});
+                    device->SetPoint({(p.first - viewport.pos.x) * windowScale, y});
+                    device->DrawLine({(p.second - viewport.pos.x) * windowScale, y});
+                }
             }
         }
 
@@ -632,11 +643,22 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
             points.push_back(rotatedPoint(0.4f, -1.f - lander.height / 2));
         } else {
             // Pristine lander
+            points.push_back(rotatedPoint(0, lander.height / 2));
+            points.push_back(rotatedPoint(-lander.width / 2, lander.height / 2));
+            points.push_back(rotatedPoint(-lander.width / 2, -(lander.height / 2 - 2.5f)));
+            points.push_back(rotatedPoint(-lander.width / 2 + 1.5f, -lander.height / 2));
+            points.push_back(rotatedPoint(lander.width / 2 - 1.5f, -lander.height / 2));
+            points.push_back(rotatedPoint(lander.width / 2, -(lander.height / 2 - 2.5f)));
+            points.push_back(rotatedPoint(lander.width / 2, lander.height / 2));
+            points.push_back(rotatedPoint(0, lander.height / 2));
+
+            /*
             points.push_back(rotatedPoint(0, -lander.height / 2));
             points.push_back(rotatedPoint(-lander.width / 2, lander.height / 5));  // left
             points.push_back(rotatedPoint(0, 0));                                  // center
             points.push_back(rotatedPoint(lander.width / 2, lander.height / 5));   // right
             points.push_back(rotatedPoint(0, -lander.height / 2));
+            */
         }
 
         if (gameState == ST_PLAY || gameState == ST_WAIT) {
@@ -720,17 +742,17 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
             if (engineon) {
                 // draw engine exhaust
-                device->SetIntensity(0.1f);
+                device->SetIntensity(0.2f);
 
                 // vary exhaust size
                 float h = lander.height;
-                h += (elapsed & 0x3) * h / 6.f;
+                h = h + h * ((float)rand() / RAND_MAX - 0.5f);
 
                 std::array<AudioRender::Point, 4> exhaust = {            //
                     rotatedPoint(0, h),                                  //
-                    rotatedPoint(-lander.width / 4, lander.height / 4),  //
+                    rotatedPoint(-lander.width / 4, lander.height / 2),  //
                     rotatedPoint(0, h),                                  //
-                    rotatedPoint(lander.width / 4, lander.height / 4)};
+                    rotatedPoint(lander.width / 4, lander.height / 2)};
                 for (auto& p : exhaust) {
                     p.x += centerOffset.x;
                     p.y += centerOffset.y;
@@ -741,9 +763,35 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 device->SetPoint(exhaust[2] * windowScale);
                 device->DrawLine(exhaust[3] * windowScale);
             }
+
+            if (controller.left.status() || controller.right.status()) {
+                // draw steering rocket flames
+
+                device->SetIntensity(0.1f);
+                float s = (float)rand() / RAND_MAX - 0.5f;
+
+                auto drawSteer = [&](int pos) {
+                    std::array<AudioRender::Point, 3> control = {                                 //
+                        rotatedPoint(pos * (-lander.width / 2 + .5f), -lander.height / 2 + .7f),  //
+                        rotatedPoint(pos * (-lander.width - s), -lander.height / 2 + .1),         //
+                        rotatedPoint(pos * (-lander.width / 2 + .6f), -lander.height / 2 + 1)};
+                    device->SetPoint(control[0] * windowScale);
+                    for (size_t i = 1; i < control.size(); i++) {
+                        device->DrawLine(control[i] * windowScale);
+                    }
+                };
+
+                if (controller.right.status()) {
+                    drawSteer(1);
+                }
+                if (controller.left.status()) {
+                    drawSteer(-1);
+                }
+            }
         }
 
-        // indicate fuel        
+
+        // indicate fuel
         if (gameState == ST_PLAY) {
             const float lowFuelAlarmLevel = .15f;
 
@@ -752,7 +800,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 static Timer blinkTimer(true, 0.3f);
                 blinkTimer.update(elapsed / 1000.f);
                 int step = 1;
-                if (p > lowFuelAlarmLevel || blinkTimer.flipflop) {  // blink if low fuel
+                if (p > lowFuelAlarmLevel /*|| blinkTimer.flipflop*/) {  // blink if low fuel
 #if 1
                     char buffer[16];
                     snprintf(buffer, sizeof(buffer), "%02d", (int)std::roundf(p * 100));
@@ -773,9 +821,8 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     }
 #endif
                 }
-            }            
+            }
         }
-        
 
 
 #if 0

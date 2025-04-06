@@ -12,8 +12,8 @@ struct Rectangle {
 };  // namespace Rectangle
 
 struct Point {
-    float x;
-    float y;
+    float x = 0;
+    float y = 0;
 
     Point operator+(const Point&& p) const { return {x + p.x, y + p.y}; }
     Point operator*(float f) const { return {x * f, y * f}; }
