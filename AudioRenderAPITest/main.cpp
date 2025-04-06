@@ -1,6 +1,7 @@
 #include <Windows.h>
 
 #include <atomic>
+#include <filesystem>
 
 #include <Log.hpp>
 
@@ -42,8 +43,14 @@ int main(int argc, char* argv[])
         printf("%s", ex.what());
         return 1;
     }
-    if (result.count("help")) {
+
+    const auto& unmatched = result.unmatched();
+    if (result.count("help") || unmatched.size()) {
         printf("%s\n", options.help().c_str());
+        for (auto& arg : unmatched) {
+            printf("Unknown argument: \"%s\"\n", arg.c_str());
+            break;
+        }
         return 1;
     }
 
@@ -273,8 +280,7 @@ void svgRender(AudioRender::IDrawDevice* device)
 
     // Load SVG
     std::shared_ptr<AudioRender::SVGImage> vectorizer;
-    const char* SVGsamples[] = {"anarchy.svg", "communism.svg", "Heart-hand-shake.svg", "poison.svg", "nano.svg", "nuclear.svg", "pentagram.svg",
-        "SCP_Foundation.svg", "vault-tec-logo.svg"};
+    std::vector<std::string> SVGSamples;
 
     unsigned int ts = 0;
     int imgidx = 0;
@@ -284,6 +290,22 @@ void svgRender(AudioRender::IDrawDevice* device)
     bool keyDownDown = false;
     bool keyPDown = false;
     bool paused = false;
+
+    std::filesystem::directory_iterator dit(".");
+    for (auto& entry : dit) {
+        auto& p = entry.path();
+        std::string ext = p.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        
+        if (ext == ".svg") {
+            SVGSamples.emplace_back(p.string());
+        }
+    }
+    if (SVGSamples.size() == 0) {
+        printf("No SVG files found.\n");
+        return;
+    }
+
 
     while (g_running) {
         // Jump to next on space bar press
@@ -328,13 +350,13 @@ void svgRender(AudioRender::IDrawDevice* device)
             // Swap image every 8 seconds
             ts = now + 8000;
             vectorizer = std::make_shared<AudioRender::SVGImage>();
-            if (!vectorizer->loadImage(SVGsamples[imgidx])) {
+            if (!vectorizer->loadImage(SVGSamples[imgidx].c_str())) {
                 vectorizer = nullptr;
-                LOGE("Failed to load \"%s\". %s", SVGsamples[imgidx], GetLastErrorString());
+                LOGE("Failed to load \"%s\". %s", SVGSamples[imgidx].c_str(), GetLastErrorString());
             } else {
-                printf("# %s\n", SVGsamples[imgidx]);
+                printf("# %s\n", SVGSamples[imgidx].c_str());
             }
-            imgidx = (imgidx + 1) % ARRAYSIZE(SVGsamples);
+            imgidx = (imgidx + 1) % SVGSamples.size();
         }
         if (imageSwapped || keyUpPressed || keyDownPressed) {
             device->Begin();

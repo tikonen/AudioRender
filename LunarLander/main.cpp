@@ -30,12 +30,14 @@ int main(int argc, char* argv[])
     cxxopts::Options options(argv[0], APP_NAME " " VERSION " " __DATE__);
     cxxopts::ParseResult result;
 
-    options.add_options()           //
-        ("h,help", "This message")  //
-        ("S", "Simulation render")  //
-        ("A", "Audio render")       //
-        ("I", "Integrator render")  //
-        ("T", "Test audio tone render");
+    options.add_options()                //
+        ("h,help", "This message")       //
+        ("S", "Simulation render")       //
+        ("A", "Audio render")            //
+        ("I", "Integrator render")       //
+        ("T", "Test audio tone render")  //
+        ("flipx", "Flip x axis")         //
+        ("flipy", "Flip y axis");
 
     try {
         result = options.parse(argc, argv);
@@ -43,10 +45,23 @@ int main(int argc, char* argv[])
         printf("%s", ex.what());
         return 1;
     }
-    if (result.count("help")) {
+
+    const auto& unmatched = result.unmatched();
+    if (result.count("help") || unmatched.size()) {
         printf("%s\n", options.help().c_str());
+        for (auto& arg : unmatched) {
+            printf("Unknown argument: \"%s\"\n", arg.c_str());
+            break;
+        }
         return 1;
     }
+
+    float xScale = X_SCALE;
+    float yScale = Y_SCALE;
+
+    if (result.count("flipx")) xScale *= -1;
+    if (result.count("flipy")) yScale *= -1;
+
 
     if (result.count("S")) {
         // Use simple window rendering
@@ -85,7 +100,7 @@ int main(int argc, char* argv[])
         AudioRender::AudioDevice audioDevice;
         audioDevice.Initialize();
         auto audioGenerator = std::make_shared<AudioRender::AudioGraphicsBuilder>();
-        audioGenerator->setScale(X_SCALE, Y_SCALE);
+        audioGenerator->setScale(xScale, yScale);
         audioDevice.SetGenerator(audioGenerator);
         audioDevice.Start();
 

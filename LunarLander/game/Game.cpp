@@ -91,18 +91,21 @@ struct Key : Button {
 // Utility to write text on the view
 struct TextUtil {
     using Character = std::vector<std::vector<AudioRender::Point>>;
-
-    const Character l_A = {{{0, 0}, {2.5f, -10}, {5.f, 0}}, {{2.5f / 2, -4}, {5.f - 2.5f / 2, -4}}};
+    
+    const Character l_A = {{{0, 0}, {0, -7.5}, {1, -10}, {2.5, -10}, {3.5, -7.5}, {3.5, 0}}, {{0, -5}, {3.5, -5}}};
+    const Character l_E = {{{3.5f, 0}, {0, 0}, {0, -10}, {3.5f, -10}}, {{0, -5.f}, {3, -5.f}}};
     const Character l_F = {{{0, 0}, {0, -10}, {4, -10}}, {{0, -5.f}, {3, -5.f}}};
     const Character l_I = {{{0, 0}, {0, -10}}};
     const Character l_K = {{{0, 0}, {0, -10}}, {{4, -10}, {0, -5}, {4, 0}}};
     const Character l_L = {{{0, -10}, {0, 0}, {3.5f, 0}}};
-    const Character l_O = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};
-    const Character l_P = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}}};
+    const Character l_O = {{{3, 0}, {6, -5}, {3, -10}, {0, -5}, {3, 0}}};    
+    const Character l_P = {{{0, 0}, {0, -10}, {1, -10}, {3.5, -9}, {3.5, -6}, {1, -5}, {0, -5}}};
     const Character l_R = {{{0, 0}, {0, -10}, {5, -7}, {0, -3}, {5, 0}}};
+    const Character l_S = {{{3.5, -10}, {0, -10}, {0, -5}, {3.5, -5}, {3.5, 0}, {0, 0}}};
+    const Character l_U = {{{0, -10}, {0, 0}, {3.5f, 0}, {3.5f, -10}}};
     const Character l_W = {{{0, -10}, {6.f / 3, 0}, {6.f / 2, -6}, {6.f - 6.f / 3, 0}, {6, -10}}};
     const Character l_N = {{{0, 0}, {0, -10}, {4, 0}, {4, -10}}};
-    const Character l_D = {{{0, 0}, {0, -10}, {4, -8}, {4, -2}, {0, 0}}};
+    const Character l_D = {{{0, 0}, {0, -10}, {3.5, -8}, {3.5, -2}, {0, 0}}};
     const Character l__ = {{{0, 0}, {4, 0}}};
 
     const Character d0 = {{{0, 0}, {0, -10}, {4, -10}, {4, 0}, {0, 0}, {4, -10}}};
@@ -129,6 +132,7 @@ struct TextUtil {
             letters[i] = &l__;
         }
         letters['A'] = &l_A;
+        letters['E'] = &l_E;
         letters['F'] = &l_F;
         letters['I'] = &l_I;
         letters['K'] = &l_K;
@@ -136,6 +140,8 @@ struct TextUtil {
         letters['O'] = &l_O;
         letters['P'] = &l_P;
         letters['R'] = &l_R;
+        letters['S'] = &l_S;
+        letters['U'] = &l_U;
         letters['W'] = &l_W;
         letters['N'] = &l_N;
         letters['D'] = &l_D;
@@ -353,7 +359,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
     Timer coolDownTimer(false, 2.0f);  // Restrics state change speed
     enum GameState { ST_WAIT, ST_PLAY, ST_WIN, ST_FAIL } gameState = ST_WAIT;
     float totalTime = 0;
-    bool paused = false;
+    int paused = 0;
     int level = 0;
     generateLevel(level);
 
@@ -423,6 +429,10 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
         */
 
         if (paused) {
+            if (paused == 1) {
+                textUtil.writeText("PAUSED", -10, -10.0f, .5f);
+                paused = 2;
+            }
             // just show last render
             running = running && device->WaitSync(1000);
             device->Submit();
@@ -763,7 +773,7 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                     }
 #endif
                 }
-            }
+            }            
         }
         
 
