@@ -362,7 +362,6 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
     auto generateLevel = [&](int level) { map = generateTerrain(level, viewport.width); };
 
-    Timer landingPadTimer(true, 0.5f);
     Timer coolDownTimer(false, 2.0f);  // Restrics state change speed
     enum GameState { ST_WAIT, ST_PLAY, ST_WIN, ST_FAIL } gameState = ST_WAIT;
     float totalTime = 0;
@@ -589,21 +588,18 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 y0 = y1;
             }
 
-            landingPadTimer.update(elapsed / 1000.f);
-            // blink landing pad if zoom level is far enough
-            if (landingPadTimer.flipflop || viewport.zoom > 5) {
-                // Mark landing places
-                device->SetIntensity(0.5f);
-                for (auto& p : map.landingPlaces) {
-                    if (p.first > terrainxe) continue;
-                    if (p.second < terrainxs) continue;
 
-                    const float y = (map.terrain[p.first] - terrainyOffset + 1) * windowScale;
-                    if (std::fabsf(y) > 0.55f) continue;  // not visible
+            // Mark landing places
+            device->SetIntensity(0.5f);
+            for (auto& p : map.landingPlaces) {
+                if (p.first > terrainxe) continue;
+                if (p.second < terrainxs) continue;
 
-                    device->SetPoint({(p.first - viewport.pos.x) * windowScale, y});
-                    device->DrawLine({(p.second - viewport.pos.x) * windowScale, y});
-                }
+                const float y = (map.terrain[p.first] - terrainyOffset + 1) * windowScale;
+                if (std::fabsf(y) > 0.55f) continue;  // not visible
+
+                device->SetPoint({(p.first - viewport.pos.x) * windowScale, y});
+                device->DrawLine({(p.second - viewport.pos.x) * windowScale, y});
             }
         }
 
@@ -764,17 +760,23 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
                 device->DrawLine(exhaust[3] * windowScale);
             }
 
-            if (controller.left.status() || controller.right.status()) {
+            if ((controller.left.status() || controller.right.status()) && viewport.zoom >= 2) {
                 // draw steering rocket flames
 
                 device->SetIntensity(0.1f);
-                float s = (float)rand() / RAND_MAX - 0.5f;
+                float s = (float)rand() / RAND_MAX;
 
                 auto drawSteer = [&](int pos) {
                     std::array<AudioRender::Point, 3> control = {                                 //
                         rotatedPoint(pos * (-lander.width / 2 + .5f), -lander.height / 2 + .7f),  //
-                        rotatedPoint(pos * (-lander.width - s), -lander.height / 2 + .1),         //
-                        rotatedPoint(pos * (-lander.width / 2 + .6f), -lander.height / 2 + 1)};
+                        rotatedPoint(pos * (-lander.width + s), -lander.height / 2 + -.2f),       //
+                        rotatedPoint(pos * (-lander.width / 2 + .6f), -lander.height / 2 + .3)};
+
+                    for (auto& p : control) {
+                        p.x += centerOffset.x;
+                        p.y += centerOffset.y;
+                    }
+
                     device->SetPoint(control[0] * windowScale);
                     for (size_t i = 1; i < control.size(); i++) {
                         device->DrawLine(control[i] * windowScale);
@@ -793,34 +795,11 @@ void Game::mainLoop(std::atomic_bool& running, AudioRender::IDrawDevice* device)
 
         // indicate fuel
         if (gameState == ST_PLAY) {
-            const float lowFuelAlarmLevel = .15f;
-
             float p = lander.fuel / lander.initialFuel;
-            if (p > 0) {
-                static Timer blinkTimer(true, 0.3f);
-                blinkTimer.update(elapsed / 1000.f);
-                int step = 1;
-                if (p > lowFuelAlarmLevel /*|| blinkTimer.flipflop*/) {  // blink if low fuel
-#if 1
-                    char buffer[16];
-                    snprintf(buffer, sizeof(buffer), "%02d", (int)std::roundf(p * 100));
-                    textUtil.writeText(buffer, -8, -35.0f, .5f);
-#else
-                    Vector2Df needle(-0.5, 0);
-                    const int steps = 20;
-                    needle = vrotate(needle, DEGTORAD(45 * p));
-                    const float angleStep = DEGTORAD(90.f / steps);
-                    device->SetPoint({needle.x, -needle.y});
-                    for (float r = 0; r <= p; r += 1.f / steps) {
-                        needle = vrotate(needle, -angleStep);
-                        if (step)
-                            device->DrawLine({needle.x, -needle.y});
-                        else
-                            device->SetPoint({needle.x, -needle.y});
-                        step = 1 - step;
-                    }
-#endif
-                }
+            if (p >= 0) {                                
+                char buffer[16];
+                snprintf(buffer, sizeof(buffer), "%02d", (int)std::roundf(p * 100));                
+                textUtil.writeText(buffer, -8, -35.0f, .5f);
             }
         }
 
