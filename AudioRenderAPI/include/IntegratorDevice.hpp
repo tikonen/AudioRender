@@ -4,8 +4,10 @@
 #include <memory>
 #include <string>
 
-#include <ftprotocol.h>
 #include "DrawDevice.hpp"
+
+struct FTSample;
+struct FTPacket;
 
 namespace AudioRender
 {
@@ -31,7 +33,7 @@ protected:
     int EncodeLine(const GraphicsPrimitive& p, EncodeCtx& ctx);
     int EncodeSync(const GraphicsPrimitive& p, EncodeCtx& ctx);
 
-    std::vector<FTSample> m_samples;
+    std::vector<FTSample> *m_samples;
 
     // Amplitude scale
     float m_xScale;

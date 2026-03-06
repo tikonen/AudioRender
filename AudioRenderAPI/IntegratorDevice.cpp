@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "IntegratorDevice.hpp"
+#include "ftprotocol.h"
 
 //#pragma comment(lib, "winusb.lib")
 //#pragma comment(lib, "setupapi.lib")
@@ -31,6 +32,7 @@ namespace AudioRender
 IntegratorGraphicsBuilder::IntegratorGraphicsBuilder()
     : m_xScale(INTEG_SCALE_FACTOR)
     , m_yScale(INTEG_SCALE_FACTOR)
+    , m_samples(new std::vector<FTSample>())
 {
 }
 
@@ -145,7 +147,7 @@ void IntegratorGraphicsBuilder::EncodeSamples(const std::vector<GraphicsPrimitiv
     int points = 0;
     EncodeCtx ctx{0};
 
-    m_samples.clear();
+    m_samples->clear();
 
     for (size_t i = 0; i < ops.size(); i++) {
         const GraphicsPrimitive& p = ops[i];
@@ -173,18 +175,18 @@ int IntegratorGraphicsBuilder::encodeSync(float x, float y, EncodeCtx& ctx)
 
     // Reset the integrator to center
     pointSample(sample, 0, 0, true);
-    m_samples.emplace_back(sample);
+    m_samples->emplace_back(sample);
     samplec++;
 
     // Lock integrator reference and wait a few us to stabilize
     controlSample(sample, false, true, 4);
-    m_samples.emplace_back(sample);
+    m_samples->emplace_back(sample);
     samplec++;
 
     if (x != 0 || y != 0) {
         // move the beam as fast as possible to the desired starting location
         if (fastPathSample(sample, ctx.xref, ctx.yref, ctx.xref, ctx.yref, m_xScale * x, m_yScale * y)) {
-            m_samples.emplace_back(sample);
+            m_samples->emplace_back(sample);
             samplec++;
         }
     }
@@ -196,12 +198,12 @@ int IntegratorGraphicsBuilder::encodeSync(float x, float y, EncodeCtx& ctx)
 
     // Reset the integrator to a specified levels
     pointSample(sample, ctx.xref, ctx.yref, true);
-    m_samples.emplace_back(sample);
+    m_samples->emplace_back(sample);
     samplec++;
 
     // Lock integrator reference and wait a few us to stabilize
     controlSample(sample, false, true, 4);
-    m_samples.emplace_back(sample);
+    m_samples->emplace_back(sample);
     samplec++;
 #endif
     return samplec;
@@ -218,7 +220,7 @@ int IntegratorGraphicsBuilder::EncodeLine(const GraphicsPrimitive& p, EncodeCtx&
     
     if (pathSample(sample, ctx.xref, ctx.yref, m_xScale * p.p.x, m_yScale * p.p.y, m_xScale * p.toPoint.x, m_yScale * p.toPoint.y, p.intensity)) {
         ctx.syncPoint = false;
-        m_samples.emplace_back(sample);
+        m_samples->emplace_back(sample);
         return 1;
     }
     return 0;
@@ -241,7 +243,7 @@ int IntegratorGraphicsBuilder::EncodeCircle(const GraphicsPrimitive& p, EncodeCt
         } else {
             FTSample sample;
             pathSample(sample, ctx.xref, ctx.yref, m_xScale * prev.x, m_yScale * prev.y, m_xScale * x, m_yScale * y, p.intensity);
-            m_samples.emplace_back(sample);
+            m_samples->emplace_back(sample);
         }
         prev.x = x;
         prev.y = y;
@@ -338,7 +340,7 @@ void IntegratorDevice::Submit()
     EncodeSamples(m_operations);
 
     // submit data
-    if (m_samples.size() == 0) return;
+    if (m_samples->size() == 0) return;
 
     std::vector<byte> buffer(FT_MAX_PACKET_SIZE);
     FTPacket* packet = (FTPacket*)buffer.data();
@@ -354,15 +356,15 @@ void IntegratorDevice::Submit()
 
         // fill a packet with samples
         int samplec = 0;
-        for (; samplec < FT_MAX_PACKET_SAMPLES && si < m_samples.size(); si++, samplec++) {
-            packet->frame.samples[samplec] = m_samples[si];
+        for (; samplec < FT_MAX_PACKET_SAMPLES && si < m_samples->size(); si++, samplec++) {
+            packet->frame.samples[samplec] = (*m_samples)[si];
         }
         setFramePacketSize(packet, samplec);
 
         if (packetc == 1) {
             packet->frame.sof = 1;  // first packet, start of frame
         }
-        if (si == m_samples.size() || packetc == MAX_PACKETS_PER_FRAME) {
+        if (si == m_samples->size() || packetc == MAX_PACKETS_PER_FRAME) {
             packet->frame.eof = 1;  // last packet, end of frame
             done = true;
         }

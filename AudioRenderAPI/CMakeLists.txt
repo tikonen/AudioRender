@@ -15,9 +15,7 @@ add_msvc_precompiled_header(pch.h "${CMAKE_CURRENT_SOURCE_DIR}/pch.cpp" _source_
 add_library(${_target} STATIC ${_source_files})
 target_compile_definitions(${_target} PRIVATE -D_UNICODE -DUNICODE)
 
-target_include_directories(${_target} PUBLIC 
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../DACIntegratorDriver/Common)
+target_include_directories(${_target} PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # required for winrt. Also /EHsc flag must be set to enable exceptions
 set_target_properties(${_target} PROPERTIES CXX_STANDARD 17)
